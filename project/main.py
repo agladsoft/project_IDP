@@ -79,7 +79,7 @@ class HandleMultiPagesPDF:
                 procs.append(proc)
             [proc.get() for proc in procs]
 
-    def handle_pages(self, file, dir_main: str, dir_csv: str, dir_json: str, classification: str):
+    def handle_pages(self, file: str, dir_main: str, dir_csv: str, dir_json: str, classification: str):
         """
 
         :param file:
