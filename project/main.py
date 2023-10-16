@@ -6,6 +6,7 @@ import json
 import glob
 import yaml
 import math
+import magic
 import shutil
 import requests
 import psycopg2
@@ -105,9 +106,15 @@ class HandleMultiPagesPDF:
 
         :return:
         """
-        self.get_count_pages_from_file()
-        self.split_file()
-        self.get_count_split_pages()
+        mime_type: str = magic.from_file(self.file, mime=True)
+        if mime_type == "application/pdf":
+            self.get_count_pages_from_file()
+            self.split_file()
+            self.get_count_split_pages()
+        elif mime_type == "image/jpeg":
+            shutil.copy(self.file, f'{self.dir_cache}/{os.path.basename(self.file)}.jpg')
+        else:
+            logger.error(f"The file format is not supported {os.path.basename(self.file)}")
         self.start_file_processing()
 
 

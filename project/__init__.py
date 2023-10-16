@@ -2,7 +2,7 @@ import os
 from logging.handlers import RotatingFileHandler
 from logging import Formatter, getLogger, INFO, StreamHandler
 
-WORKER_COUNT: int = 1
+WORKER_COUNT: int = 16
 LOG_FORMAT: str = "[%(asctime)s] %(levelname)s [%(name)s.%(funcName)s:%(lineno)d] %(message)s"
 DATE_FTM: str = "%d.%m.%Y %H:%M"
 MAX_FILE_SIZE: int = 1024 * 10024  # 1 МБ
