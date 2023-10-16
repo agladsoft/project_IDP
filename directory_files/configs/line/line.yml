@@ -1,0 +1,47 @@
+labels:
+  - label: "line_label"
+    key: "Экспедитор ООО"
+
+  - label: "port_load"
+    key: "Порт погрузки"
+
+  - label: "port_unload"
+    key: "Порт выгрузки"
+
+  - label: "shipper"
+    key: "Отправитель"
+
+  - label: "contract"
+    key: "Номер контракта"
+
+  - label: "goods_name_rus"
+    key: "Груз"
+
+  - label: "inn"
+    key: "КОД ИНН"
+    postprocessing: "get_inn"
+    validations: "is_valid_inn"
+
+  - label: "tnved"
+    key: "КОД ТНВЭД"
+    postprocessing: "get_tnved"
+    validations: "is_valid_tnved"
+
+#  - label: "all_text"
+#    key: null
+
+config_of_table:
+  length_of_kernel: 170
+  min_width_of_cell: 10
+  min_height_of_cell: 14
+  indent_x_text_of_cells: 0
+  indent_y_text_of_cells: 0
+  config_for_pytesseract: "--oem 3 --psm 6"
+
+config_of_database:
+  database: "idp_db"
+  user: "idp_admin"
+  password: "w8g8GyOYLR83"
+  host: "localhost"
+  port: "5432"
+  table: "line"

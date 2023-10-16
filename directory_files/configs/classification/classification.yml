@@ -1,0 +1,25 @@
+port:
+  name: port
+  folder: "files/classification/port"
+  key: "МетизТранс"
+  config: "port.yml"
+
+
+line:
+  name: line
+  folder: "files/classification/line"
+  key: "Аркас Раша"
+  config: "line.yml"
+  
+  
+line2:
+  name: line2
+  folder: "files/classification/port"
+  key: "ПРИЛОЖЕНИЕ К ПОРУЧЕНИЮ"
+  config: "port.yml"
+
+
+unknown:
+  name: unknown
+  folder: "files/classification/unknown"
+  key: None

@@ -1,0 +1,29 @@
+version: "3.9"
+services:
+  IDP:
+    container_name: IDP_container
+    image: python:3.8
+    restart: always
+    ports:
+      - "8398:8398"
+    volumes:
+      - ${PATH_IDP_ROOT_SCRIPTS}:${PATH_IDP_DOCKER_SCRIPTS}
+      - ${PATH_IDP_ROOT_FILES}:${PATH_IDP_DOCKER_FILES}
+    environment:
+      PATH_IDP_DOCKER_SCRIPTS: ${PATH_IDP_DOCKER_SCRIPTS}
+      PATH_IDP_DOCKER_FILES: ${PATH_IDP_DOCKER_FILES}
+    build:
+      context: project
+      dockerfile: ./Dockerfile
+    command:
+      bash -c "chmod -R 777 ${PATH_IDP_DOCKER_SCRIPTS} && sh ${PATH_IDP_DOCKER_SCRIPTS}/run.sh"
+    networks:
+      network:
+        ipv4_address: 172.31.100.11
+
+networks:
+  network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.31.100.0/24
