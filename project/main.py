@@ -112,7 +112,7 @@ class HandleMultiPagesPDF:
             self.split_file()
             self.get_count_split_pages()
         elif mime_type == "image/jpeg":
-            shutil.copy(self.file, f'{self.dir_cache}/{os.path.basename(self.file)}.jpg')
+            shutil.copy(self.file, f'{self.dir_cache}/{os.path.basename(self.file)}')
         else:
             logger.error(f"The file format is not supported {os.path.basename(self.file)}")
         self.start_file_processing()
@@ -234,7 +234,7 @@ class HandleJPG:
             try:
                 yaml_file = yaml.safe_load(stream)
                 for label_in_config in yaml_file:
-                    if yaml_file[label_in_config]["key"] in str_of_doc:
+                    if yaml_file[label_in_config]["key"].upper() in str_of_doc.upper():
                         with contextlib.suppress(OSError):
                             os.remove(yaml_file[label_in_config]['folder'] + '/' + os.path.basename(file_name))
                         if os.path.isfile(file_name):
