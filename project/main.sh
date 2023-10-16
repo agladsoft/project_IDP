@@ -33,31 +33,18 @@ fi
 # shellcheck disable=SC2162
 find "${pdf_path}" -maxdepth 1 -type f \( -name "*.pdf*" -or -name "*.jpg*" \) ! -newermt '3 seconds ago' -print0 | while read -d $'\0' file
 do
-    basename_file=$(basename "$file")
     if [[ "${file}" == *"error_"* ]];
     then
         continue
     fi
 
-    mime_type=$(file -b --mime-type "$file")
-    echo "'${file} - ${mime_type}'"
+    python3 "${PATH_IDP_DOCKER_SCRIPTS}"/main.py "${file}" "${cache}"
 
-    if [[ ${mime_type} = "application/pdf" ]]
+    # shellcheck disable=SC2181
+    if [ $? -eq 0 ]
     then
-        python3 "${PATH_IDP_DOCKER_SCRIPTS}"/scripts_for_IDP/len_files_in_file.py "${pdf_path}/${basename_file}"
-        rm -rf "${pdf_path}/cache" && mkdir "${pdf_path}/cache"
-        python3 "${PATH_IDP_DOCKER_SCRIPTS}"/scripts_for_IDP/pdf_split.py "$file" "${pdf_path}/cache/${basename_file}"
-        python3 "${PATH_IDP_DOCKER_SCRIPTS}"/scripts_for_IDP/len_files_in_cache.py "${pdf_path}/cache"
-        python3 "${PATH_IDP_DOCKER_SCRIPTS}"/run_all_scripts.py "${pdf_path}" "${file}"
-    elif [[ ${mime_type} = "image/jpeg" ]]
-    then
-        cp "${file}" "${pdf_path}/cache"
-        python3 "${PATH_IDP_DOCKER_SCRIPTS}"/run_all_scripts.py "${pdf_path}" "${file}"
+        mv "${file}" "${done_path}"
     else
-        echo "ERROR: unsupported format ${mime_type}"
         mv "${file}" "${pdf_path}/error_$(basename "${file}")"
-        continue
     fi
-
-    mv "${file}" "${done_path}"
 done
