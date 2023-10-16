@@ -1,3 +1,4 @@
+import os
 import re
 import sys
 import cv2
@@ -550,7 +551,7 @@ class RecognizeTable:
         self.write_to_csv(box)
         list_all_table = self.write_to_json(box)
         self.push_to_db(list_all_table)
-        CSVData(self.file).parsed_json_from_db(os.path.basename(self.file), list_all_table)
+        CSVData().parsed_json_from_db(os.path.basename(self.file), self.output_directory_csv, list_all_table)
 
 
 class Cell:
@@ -683,8 +684,7 @@ class Cell:
 
 class CSVData:
 
-    def __init__(self, file):
-        self.file = file
+    def __init__(self):
         self.consignee = None
         self.shipper = None
         self.containers = []
@@ -721,7 +721,7 @@ class CSVData:
             for dict_cell in cell:
                 self.parse_json(dict_cell, dict_table)
 
-    def parsed_json_from_db(self, file, mobile_records):
+    def parsed_json_from_db(self, file, directory, mobile_records):
         print("Print each row and it's columns values")
         dict_containers = defaultdict(list)
         for json_data in mobile_records:
@@ -732,7 +732,7 @@ class CSVData:
                         self.parse_json(cell, dict_table)
                     self.get_specific_data_from_json(dict_table)
         self.iter_all_containers(dict_containers)
-        self.write_parsed_data_to_csv(file, dict_containers)
+        self.write_parsed_data_to_csv(file, directory, dict_containers)
 
     def get_specific_data_from_json(self, dict_table):
         self.consignee = self.get_key_by_value(self.consignee, dict_table, "Грузополучатель")
@@ -750,11 +750,11 @@ class CSVData:
                 return dict_table[key]
         return value_of_column
 
-    def write_parsed_data_to_csv(self, row, dict_containers):
-        load_data_from_db = f"{os.path.basename(self.file)}/csv"
+    def write_parsed_data_to_csv(self, file, directory, dict_containers):
+        load_data_from_db = f"{directory}/csv"
         if not os.path.exists(load_data_from_db):
             os.makedirs(load_data_from_db)
-        with open(f"{load_data_from_db}/{row}.csv", "w") as f:
+        with open(f"{load_data_from_db}/{file}_parsed.csv", "w") as f:
             writer = csv.DictWriter(f, fieldnames=['container_number', 'is_valid', 'consignee', 'shipper'])
             writer.writeheader()
             for container, is_valid in dict_containers.items():
