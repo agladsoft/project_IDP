@@ -18,6 +18,7 @@ import scipy.ndimage
 from PIL import Image
 from __init__ import *
 from typing import Union
+from fuzzywuzzy import fuzz
 from PyPDF2 import PdfFileReader
 from multiprocessing import Pool
 from itertools import combinations
@@ -422,6 +423,7 @@ class RecognizeTable:
                             ocr_json_label["label"] = yaml_file["labels"][len_label_in_config]["label"]
                             self.add_values_in_dict(ocr_json_label, dict_text, value)
                             postprocessing = ValidationsAndPostProcessing().postprocessing(yaml_file,
+                                                                                           yaml_file["labels"][len_label_in_config]["key"],
                                                                                            len_label_in_config,
                                                                                            self.scripts_for_validations_and_postprocessing,
                                                                                            value)
@@ -686,7 +688,7 @@ class CSVData:
 
     def __init__(self):
         self.date = None
-        self.line = None
+        self.ship = None
         self.goods_name = None
         self.tnved = None
         self.consignee = None
@@ -748,14 +750,14 @@ class CSVData:
         if dict_table:
             self.consignee = self.get_key_by_value(self.consignee, dict_table, "Грузополучатель", is_normal_table)
             self.shipper = self.get_key_by_value(self.shipper, dict_table, "Грузоотправитель", is_normal_table)
-            self.line = self.get_key_by_value(self.line, dict_table, "Наименование судна", is_normal_table)
+            self.ship = self.get_key_by_value(self.ship, dict_table, "Наименование судна", is_normal_table)
             self.goods_name = self.get_key_by_value(self.goods_name, dict_table, "Наименование товара", is_normal_table)
             self.tnved = self.get_key_by_value(self.tnved, dict_table, "Код ТНВЭД товара", is_normal_table)
 
     @staticmethod
     def get_key_by_value(value_of_column, dict_table, value_to_find, is_normal_table):
         for key, value in dict_table.items():
-            if re.sub(r"\s+", "", value) == re.sub(r"\s+", "", value_to_find):
+            if fuzz.ratio(value, value_to_find) > 90:
                 key = (key[0] + 1, key[1]) if is_normal_table else (key[0], key[1] + 1)
                 return dict_table[key]
         return value_of_column
@@ -765,13 +767,13 @@ class CSVData:
         if not os.path.exists(load_data_from_db):
             os.makedirs(load_data_from_db)
         with open(f"{load_data_from_db}/{file}_parsed.csv", "w") as f:
-            writer = csv.DictWriter(f, fieldnames=['date', 'line', 'goods_name', 'tnved', 'container_number',
+            writer = csv.DictWriter(f, fieldnames=['date', 'ship', 'goods_name', 'tnved', 'container_number',
                                                    'is_valid', 'consignee', 'shipper'])
             writer.writeheader()
             for container, is_valid in dict_containers.items():
                 for validation in is_valid:
                     writer.writerow(
-                        dict(date=self.date, line=self.line, goods_name=self.goods_name, tnved=self.tnved,
+                        dict(date=self.date, ship=self.ship, goods_name=self.goods_name, tnved=self.tnved,
                              container_number=container, is_valid=validation, consignee=self.consignee,
                              shipper=self.shipper)
                     )

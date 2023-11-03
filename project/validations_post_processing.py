@@ -4,17 +4,19 @@ from importlib import machinery
 class ValidationsAndPostProcessing:
 
     @staticmethod
-    def postprocessing(yaml_file, len_label_in_config, scripts_for_validations_and_postprocessing, value):
+    def postprocessing(yaml_file, label, len_label_in_config, scripts_for_validations_and_postprocessing, value):
         try:
             class_name = yaml_file["labels"][len_label_in_config]["label"]
             method_name = yaml_file["labels"][len_label_in_config]["postprocessing"]
             imported = machinery.SourceFileLoader(method_name, scripts_for_validations_and_postprocessing).load_module()
             class_name = getattr(imported, class_name)
             postprocessing = getattr(class_name, method_name)
-            return postprocessing(value)
+            return postprocessing(value, label)
         except KeyError as ex_key:
             print("Not found the key by name postprocessing", ex_key)
             return value
+        except Exception as ex:
+            print(f"Exception is {ex}")
 
     @staticmethod
     def validations(yaml_file, len_label_in_config, scripts_for_validations_and_postprocessing, value, score):
