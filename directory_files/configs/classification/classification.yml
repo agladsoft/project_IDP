@@ -1,7 +1,7 @@
 port:
   name: port
   folder: "files/classification/port"
-  key: "УВЕДОМЛЕНИЕ"
+  key: "Поручение на погрузку"
   config: "port.yml"
 
 
