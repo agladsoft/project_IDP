@@ -757,7 +757,7 @@ class CSVData:
     @staticmethod
     def get_key_by_value(value_of_column, dict_table, value_to_find, is_normal_table):
         for key, value in dict_table.items():
-            if fuzz.ratio(value, value_to_find) > 75:
+            if fuzz.ratio(value, value_to_find) > 80:
                 key = (key[0] + 1, key[1]) if is_normal_table else (key[0], key[1] + 1)
                 return dict_table[key]
         return value_of_column
