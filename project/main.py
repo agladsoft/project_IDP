@@ -418,6 +418,7 @@ class RecognizeTable:
                     for len_label_in_config in range(len(yaml_file["labels"])):
                         ocr_json_label = {}
                         if yaml_file["labels"][len_label_in_config]["key"].upper() in value.upper():
+                            ocr_json_label["type"] = "text"
                             ocr_json_label["label"] = yaml_file["labels"][len_label_in_config]["label"]
                             self.add_values_in_dict(ocr_json_label, dict_text, value)
                             postprocessing = ValidationsAndPostProcessing().postprocessing(yaml_file,
@@ -684,6 +685,10 @@ class Cell:
 class CSVData:
 
     def __init__(self):
+        self.date = None
+        self.line = None
+        self.goods_name = None
+        self.tnved = None
         self.consignee = None
         self.shipper = None
         self.containers = []
@@ -723,29 +728,35 @@ class CSVData:
     def parsed_json_from_db(self, file, directory, mobile_records):
         print("Print each row and it's columns values")
         dict_containers = defaultdict(list)
+        index = 1
         for json_data in mobile_records:
-            for data in json_data:
-                with contextlib.suppress(Exception):
+            if isinstance(json_data, dict) and json_data["type"] == "label":
+                for label in json_data["text"]:
+                    if label.get("label") == "ShipAndVoyage":
+                        self.date = label.get("text")
+            elif isinstance(json_data, list):
+                for data in json_data:
                     dict_table = {}
-                    for cell in data["cells"]:
+                    for cell in data.get("cells", []):
                         self.parse_json(cell, dict_table)
-                    self.get_specific_data_from_json(dict_table)
+                    self.get_specific_data_from_json(dict_table, index == 2)
+                index += 1
         self.iter_all_containers(dict_containers)
         self.write_parsed_data_to_csv(file, directory, dict_containers)
 
-    def get_specific_data_from_json(self, dict_table):
-        self.consignee = self.get_key_by_value(self.consignee, dict_table, "Грузополучатель")
-        self.shipper = self.get_key_by_value(self.shipper, dict_table, "Грузоотправитель")
-        # elif re.findall("Ko[a-z]", text):
-        #     container_name = re.findall("Ko[a-z]+", text)[0] + ":"
-        #     containers = re.split(r'[,./]+', text.replace(container_name, ''))
-        #     self.iter_all_containers(containers, dict_containers)
+    def get_specific_data_from_json(self, dict_table, is_normal_table):
+        if dict_table:
+            self.consignee = self.get_key_by_value(self.consignee, dict_table, "Грузополучатель", is_normal_table)
+            self.shipper = self.get_key_by_value(self.shipper, dict_table, "Грузоотправитель", is_normal_table)
+            self.line = self.get_key_by_value(self.line, dict_table, "Наименование судна", is_normal_table)
+            self.goods_name = self.get_key_by_value(self.goods_name, dict_table, "Наименование товара", is_normal_table)
+            self.tnved = self.get_key_by_value(self.tnved, dict_table, "Код ТНВЭД товара", is_normal_table)
 
     @staticmethod
-    def get_key_by_value(value_of_column, dict_table, value_to_find):
+    def get_key_by_value(value_of_column, dict_table, value_to_find, is_normal_table):
         for key, value in dict_table.items():
-            if value == value_to_find:
-                key = key[0], key[1] + 1
+            if re.sub(r"\s+", "", value) == re.sub(r"\s+", "", value_to_find):
+                key = (key[0] + 1, key[1]) if is_normal_table else (key[0], key[1] + 1)
                 return dict_table[key]
         return value_of_column
 
@@ -754,13 +765,16 @@ class CSVData:
         if not os.path.exists(load_data_from_db):
             os.makedirs(load_data_from_db)
         with open(f"{load_data_from_db}/{file}_parsed.csv", "w") as f:
-            writer = csv.DictWriter(f, fieldnames=['container_number', 'is_valid', 'consignee', 'shipper'])
+            writer = csv.DictWriter(f, fieldnames=['date', 'line', 'goods_name', 'tnved', 'container_number',
+                                                   'is_valid', 'consignee', 'shipper'])
             writer.writeheader()
             for container, is_valid in dict_containers.items():
                 for validation in is_valid:
                     writer.writerow(
-                        dict(container_number=container, is_valid=validation, consignee=self.consignee,
-                             shipper=self.shipper))
+                        dict(date=self.date, line=self.line, goods_name=self.goods_name, tnved=self.tnved,
+                             container_number=container, is_valid=validation, consignee=self.consignee,
+                             shipper=self.shipper)
+                    )
 
 
 if __name__ == "__main__":

@@ -4,9 +4,6 @@ labels:
     postprocessing: "replace_symbols_and_letters"
     validations: "is_validate_for_ship_and_voyage"
 
-  - label: "ShipAndVoyage2"
-    key: "Поручение на погрузку"
-
 config_of_table:
   length_of_kernel: 150
   min_width_of_cell: 7
