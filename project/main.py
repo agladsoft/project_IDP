@@ -136,25 +136,28 @@ class HandleJPG:
         self.configs: str = configs
 
     @staticmethod
-    def rotate(image: ndarray, angle: int, background: Tuple[int, int, int]) -> ndarray:
+    def rotate(image: ndarray, angle: int, is_right_angle: bool, background: Optional[tuple] = None) -> ndarray:
         """
         Поворот изображения на 90, 180 или 270 градусов.
         :param image: Исходное изображение в виде матрицы.
         :param angle: Угол, на который нужно повернуть.
         :param background: Оттенок серого цвета.
+        :param is_right_angle: Прямой ли этот угол
         :return: Матрица перевернутого изображения.
         """
-        old_width: int
-        old_height: int
         old_width, old_height = image.shape[:2]
-        angle_radian: float = math.radians(angle)
-        width: float = abs(np.sin(angle_radian) * old_height) + abs(np.cos(angle_radian) * old_width)
-        height: float = abs(np.sin(angle_radian) * old_width) + abs(np.cos(angle_radian) * old_height)
-        image_center: Tuple[float, float] = tuple(np.array(image.shape[1::-1]) / 2)
-        rot_mat: ndarray = cv2.getRotationMatrix2D(image_center, angle, 1.0)
-        rot_mat[1, 2] += (width - old_width) / 2
-        rot_mat[0, 2] += (height - old_height) / 2
-        return cv2.warpAffine(image, rot_mat, (int(round(height)), int(round(width))), borderValue=background)
+        if is_right_angle:
+            angle_radian: float = math.radians(angle)
+            width: float = abs(np.sin(angle_radian) * old_height) + abs(np.cos(angle_radian) * old_width)
+            height: float = abs(np.sin(angle_radian) * old_width) + abs(np.cos(angle_radian) * old_height)
+            image_center: Tuple[float, float] = tuple(np.array(image.shape[1::-1]) / 2)
+            rot_mat: ndarray = cv2.getRotationMatrix2D(image_center, angle, 1.0)
+            rot_mat[1, 2] += (width - old_width) / 2
+            rot_mat[0, 2] += (height - old_height) / 2
+            return cv2.warpAffine(image, rot_mat, (int(round(height)), int(round(width))), borderValue=background)
+        center: Tuple[int, int] = (old_height // 2, old_width // 2)
+        M: ndarray = cv2.getRotationMatrix2D(center, angle, 1.0)
+        return cv2.warpAffine(image, M, (old_height, old_width), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
 
     def turn_img(self):
         """
@@ -170,7 +173,7 @@ class HandleJPG:
         image: ndarray = cv2.imread(self.input_file)
         rotate_img: str = pytesseract.image_to_osd(image, config='--psm 0 -c min_characters_to_try=5')
         angle_rotated_image: int = int(re.search(r'(?<=Orientation in degrees: )\d+', rotate_img)[0])
-        rotated: ndarray = self.rotate(image, angle_rotated_image, (0, 0, 0))
+        rotated: ndarray = self.rotate(image, angle_rotated_image, is_right_angle=True, background=(0, 0, 0))
         self.save_file(angle_rotated_image, rotated, "Поворот изображений на прямой угол")
 
     def correct_skew(self, delta: int, limit: int) -> None:
@@ -204,7 +207,7 @@ class HandleJPG:
                     else:
                         del dict_angle_and_score[max_value.x]
 
-        corrected: ndarray = self._rotate_image(image, best_angle)
+        corrected: ndarray = self.rotate(image, best_angle, is_right_angle=False)
         self.save_file(best_angle, corrected, "Выравнивание изображений под маленьким углом")
 
     def save_file(self, angle: Union[int, float], ndarray_image: ndarray, message_to_send: str) -> None:
@@ -267,25 +270,6 @@ class HandleJPG:
                 scores.append(f1)
                 angles.append(x1)
         return (x1 + x2) / 2
-
-    @staticmethod
-    def _rotate_image(image: ndarray, angle: float) -> ndarray:
-        """
-        Повернуть изображение на определенный угол.
-        :param image: Изображение в виде матрицы.
-        :param angle: Угол, на который нужно повернуть.
-        :return: Перевернутое изображение в виде матрицы.
-        """
-        (h, w) = image.shape[:2]
-        center: Tuple[int, int] = (w // 2, h // 2)
-        M: ndarray = cv2.getRotationMatrix2D(center, angle, 1.0)
-        return cv2.warpAffine(
-            image,
-            M,
-            (w, h),
-            flags=cv2.INTER_CUBIC,
-            borderMode=cv2.BORDER_REPLICATE,
-        )
 
     def move_file(self, file_name: str, yaml_file: dict, label_in_config: str) -> str:
         """

@@ -41,6 +41,4 @@ def get_logger(name: str) -> getLogger:
 
 class CustomJSON(json.JSONEncoder):
     def default(self, obj):
-        return super().encode(bool(obj)) \
-            if isinstance(obj, np.bool_) \
-            else super().default(obj)
+        return super().encode(bool(obj)) if isinstance(obj, np.bool_) else super().default(obj)
