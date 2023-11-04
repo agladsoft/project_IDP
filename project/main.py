@@ -135,8 +135,7 @@ class HandleJPG:
         self.classification: str = classification
         self.configs: str = configs
 
-    @staticmethod
-    def rotate(image: ndarray, angle: int, is_right_angle: bool, background: Optional[tuple] = None) -> ndarray:
+    def rotate(self, image: ndarray, angle: int, is_right_angle: bool, background: Optional[tuple] = None) -> ndarray:
         """
         Поворот изображения на 90, 180 или 270 градусов.
         :param image: Исходное изображение в виде матрицы.
@@ -146,6 +145,7 @@ class HandleJPG:
         :return: Матрица перевернутого изображения.
         """
         old_width, old_height = image.shape[:2]
+        logger.info(f'Rotate: {angle}, Is_right_angle: {is_right_angle}, Filename: {os.path.basename(self.input_file)}')
         if is_right_angle:
             angle_radian: float = math.radians(angle)
             width: float = abs(np.sin(angle_radian) * old_height) + abs(np.cos(angle_radian) * old_width)
@@ -220,8 +220,6 @@ class HandleJPG:
         """
         file_name: str = os.path.basename(self.input_file)
         cv2.imwrite(f'{os.path.dirname(self.input_file)}/{file_name}', ndarray_image)
-        logger.info(f'Rotate: {angle}, {message_to_send}, Filename: {file_name}')
-
         with contextlib.suppress(Exception):
             requests.post(f"http://{IP_ADDRESS_FOR_SEND_RESULT}:5000/get_logs", json={
                 "logs": message_to_send,
@@ -563,12 +561,12 @@ class RecognizeTable:
                 if cell2.parent is not None:
                     cell3: Cell = cell2.parent
                     if cell3 > cell1:
-                        cell3.childs.remove(cell2)
+                        cell3.child.remove(cell2)
                         cell2.parent = cell1
-                        cell1.childs.append(cell2)
+                        cell1.child.append(cell2)
                 else:
                     cell2.parent = cell1
-                    cell1.childs.append(cell2)
+                    cell1.child.append(cell2)
 
     @staticmethod
     def recognize_all_cells(box: list):
@@ -624,82 +622,88 @@ class RecognizeTable:
         self.recognize_all_cells(box)
         self.write_to_csv(box)
         list_all_table: list = self.write_to_json(box)
-        CSVData().parsed_json_from_db(os.path.basename(self.file), self.output_directory_csv, list_all_table)
+        DataExtractor().parsed_json(os.path.basename(self.file), self.output_directory_csv, list_all_table)
 
 
 class Cell:
-    def __init__(self, img, x1, y1, width, height, bitnot, indent_x_text_of_cells, indent_y_text_of_cells,
-                 config_for_pytesseract):
-        self.img = img
-        self.parent = None
-        self.childs = []
-        self.x1 = x1
-        self.y1 = y1
-        self.x2 = x1 + width
-        self.y2 = y1 + height
-        self.bitnot = bitnot
-        self.indent_x_text_of_cells = indent_x_text_of_cells
-        self.indent_y_text_of_cells = indent_y_text_of_cells
-        self.config_for_pytesseract = config_for_pytesseract
-        self.text = None
-        self.score = None
-        self.std = None
-        self.validations = None
-        self.row = None
-        self.col = None
-        self.child_max_row = None
-        self.child_max_col = None
+    def __init__(self, img: ndarray, x1, y1, width, height, bit_not: ndarray, indent_x_text_of_cells: int,
+                 indent_y_text_of_cells: int, config_for_pytesseract: str):
+        self.img: ndarray = img
+        self.parent: Optional[Cell] = None
+        self.child: list = []
+        self.x1: int = x1
+        self.y1: int = y1
+        self.x2: int = x1 + width
+        self.y2: int = y1 + height
+        self.bit_not: ndarray = bit_not
+        self.indent_x_text_of_cells: int = indent_x_text_of_cells
+        self.indent_y_text_of_cells: int = indent_y_text_of_cells
+        self.config_for_pytesseract: str = config_for_pytesseract
+        self.text: Optional[str] = None
+        self.score: Optional[float] = None
+        self.std: Optional[float] = None
+        self.validations: Optional[bool] = None
+        self.row: Optional[int] = None
+        self.col: Optional[int] = None
+        self.child_max_row: Optional[int] = None
+        self.child_max_col: Optional[int] = None
 
     def __gt__(self, other):
         return all((self.x1 <= other.x1, self.y1 <= other.y1, self.x2 >= other.x2, self.y2 >= other.y2))
 
     def __str__(self):
-        coords = self.x1, self.y1, self.x2, self.y2
-        return str(coords)
+        return str(self.x1, self.y1, self.x2, self.y2)
 
     def __repr__(self):
         return self.__str__()
 
-    def recognize(self, lang) -> str:
-        if self.childs:
-            bitnot2 = self.bitnot.copy()
-            for coordinates in self.childs:
-                cv2.rectangle(bitnot2, (coordinates.x1, coordinates.y1), (coordinates.x2, coordinates.y2), (255, 255,
-                                                                                                            255), -1)
+    def recognize(self, lang: str) -> str:
+        """
+
+        :param lang:
+        :return:
+        """
+        if self.child:
+            bit_not2 = self.bit_not.copy()
+            for coordinates in self.child:
+                cv2.rectangle(bit_not2, (coordinates.x1, coordinates.y1), (coordinates.x2, coordinates.y2), (255, 255,
+                                                                                                             255), -1)
         else:
-            bitnot2 = self.bitnot
-        finalimg = bitnot2[self.y1 + self.indent_x_text_of_cells: self.y2 - self.indent_x_text_of_cells,
-                           self.x1 + self.indent_y_text_of_cells: self.x2 - self.indent_y_text_of_cells]
+            bit_not2: ndarray = self.bit_not
+        final_img: ndarray = bit_not2[self.y1 + self.indent_x_text_of_cells: self.y2 - self.indent_x_text_of_cells,
+                                      self.x1 + self.indent_y_text_of_cells: self.x2 - self.indent_y_text_of_cells]
 
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 1))
-        resizing = cv2.resize(finalimg, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-
-        dilation = cv2.dilate(resizing, kernel, iterations=1)
-        erosion = cv2.erode(dilation, kernel, iterations=1)
+        kernel: ndarray = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 1))
+        resizing: ndarray = cv2.resize(final_img, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+        dilation: ndarray = cv2.dilate(resizing, kernel, iterations=1)
+        erosion: ndarray = cv2.erode(dilation, kernel, iterations=1)
         erosion = cv2.fastNlMeansDenoising(erosion, None, 20, 7, 21)
-        text = pytesseract.image_to_data(erosion, output_type="dict", lang=lang, config=self.config_for_pytesseract)
-
+        text: dict = pytesseract.image_to_data(erosion, output_type="dict", lang=lang,
+                                               config=self.config_for_pytesseract)
         dict_text, out, list_score = RecognizeTable.find_score_and_text(text, labels=False)
-        inner = out.strip()
-        inner = inner.translate({ord(c): " " for c in r"!@#$%^&*()[]{};<>?\|`~-=_+"})
+        inner: str = out.strip().translate({ord(c): " " for c in r"!@#$%^&*()[]{};<>?\|`~-=_+"})
         self.text = inner
         self.score = np.mean(list_score) if len(list_score) != 0 else None
         self.std = np.std(list_score) if len(list_score) != 0 else None
         self.validations = np.mean(list_score) > 85 if len(list_score) != 0 else None
         return inner
 
-    def get_structure_of_row(self):
-        if not self.childs:
+    def get_structure_of_row(self) -> None:
+        """
+
+        :return:
+        """
+        if not self.child:
             return
-        list_h = [elem.y2 - elem.y1 for elem in self.childs]
-        min_h_of_cell = min(list_h)
-        self.childs.sort(key=lambda c: c.y1)
-        current_row = 0
-        prev_child = self.childs[0]
-        current_row_y1 = prev_child.y1
+        list_h: List[int] = [elem.y2 - elem.y1 for elem in self.child]
+        min_h_of_cell: int = min(list_h)
+        self.child.sort(key=lambda c: c.y1)
+        current_row: int = 0
+        prev_child: Cell = self.child[0]
+        current_row_y1: int = prev_child.y1
         prev_child.row = current_row
-        if len(self.childs) > 1:
-            for current_child in self.childs[1:]:
+        if len(self.child) > 1:
+            for current_child in self.child[1:]:
                 if current_child.y1 - current_row_y1 > min_h_of_cell * 0.62:
                     current_row += 1
                 current_child.row = current_row
@@ -708,18 +712,22 @@ class Cell:
             prev_child.row = current_row
         self.child_max_row = current_row
 
-    def get_structure_of_col(self):
-        if not self.childs:
+    def get_structure_of_col(self) -> None:
+        """
+
+        :return:
+        """
+        if not self.child:
             return
-        list_w = [elem.x2 - elem.x1 for elem in self.childs]
-        min_w_of_cell = min(list_w)
-        self.childs.sort(key=lambda c: c.x1)
-        current_col = 0
-        prev_child = self.childs[0]
-        current_col_x1 = prev_child.x1
+        list_w: List[int] = [elem.x2 - elem.x1 for elem in self.child]
+        min_w_of_cell: int = min(list_w)
+        self.child.sort(key=lambda c: c.x1)
+        current_col: int = 0
+        prev_child: Cell = self.child[0]
+        current_col_x1: int = prev_child.x1
         prev_child.col = current_col
-        if len(self.childs) > 1:
-            for current_child in self.childs[1:]:
+        if len(self.child) > 1:
+            for current_child in self.child[1:]:
                 if current_child.x1 - current_col_x1 > min_w_of_cell * 0.62:
                     current_col += 1
                     current_col_x1 = current_child.x1
@@ -728,29 +736,41 @@ class Cell:
             prev_child.col = current_col
         self.child_max_col = current_col
 
-    def to_dataframe(self) -> object:
-        if not self.childs or (self.child_max_col == 1 and self.child_max_row == 1):
+    def to_dataframe(self) -> Optional[pd.DataFrame]:
+        """
+
+        :return:
+        """
+        if not self.child or (self.child_max_col == 1 and self.child_max_row == 1):
             return
-        df = pd.DataFrame(columns=range(self.child_max_col), index=range(self.child_max_row))
-        for box in self.childs:
+        df: pd.DataFrame = pd.DataFrame(columns=range(self.child_max_col), index=range(self.child_max_row))
+        for box in self.child:
             df.loc[box.row, box.col] = box.text
         return df
 
     def to_json(self) -> Union[list, dict]:
-        predicted_boxes_dict = {
+        """
+
+        :return:
+        """
+        predicted_boxes: dict = {
             "type": "text",
             "text": self.text, "row": self.row, "col": self.col, "xmin": self.x1, "ymin": self.y1,
             "xmax": self.x2, "ymax": self.y2, "score": self.score, "std": self.std, "is_valid": self.validations
         }
-        json_list = [predicted_boxes_dict]
-        if not self.childs:
-            return predicted_boxes_dict
-        table = {"type": "table", "cells": [child.to_json() for child in self.childs]}
+        json_list: list = [predicted_boxes]
+        if not self.child:
+            return predicted_boxes
+        table: dict = {"type": "table", "cells": [child.to_json() for child in self.child]}
         json_list.append(table)
         return json_list
 
     def recognize_and_get_structure_of_table(self):
-        inner = self.recognize(lang="rus+eng")
+        """
+
+        :return:
+        """
+        inner: str = self.recognize(lang="rus+eng")
         print(inner)
         if "Контейнеры" in inner:
             print(self.recognize(lang="eng"))
@@ -758,16 +778,16 @@ class Cell:
         self.get_structure_of_row()
 
 
-class CSVData:
+class DataExtractor:
 
     def __init__(self):
-        self.date = None
-        self.ship = None
-        self.goods_name = None
-        self.tnved = None
-        self.consignee = None
-        self.shipper = None
-        self.containers = []
+        self.date: Optional[str] = None
+        self.ship: Optional[str] = None
+        self.goods_name: Optional[str] = None
+        self.tnved: Optional[int] = None
+        self.consignee: Optional[str] = None
+        self.shipper: Optional[str] = None
+        self.containers: List[str] = []
 
     def iter_all_containers(self, dict_containers):
         for container in self.containers:
@@ -787,7 +807,7 @@ class CSVData:
             else:
                 dict_containers[container].append(False)
 
-    def parse_json(self, cell, dict_table):
+    def parse_json(self, cell: Union[dict, list], dict_table: dict) -> None:
         if isinstance(cell, dict):
             if cell.get("type") == "text":
                 col_table = cell.get("col")
@@ -802,10 +822,16 @@ class CSVData:
             for dict_cell in cell:
                 self.parse_json(dict_cell, dict_table)
 
-    def parsed_json_from_db(self, file, directory, mobile_records):
-        print("Print each row and it's columns values")
-        dict_containers = defaultdict(list)
-        index = 1
+    def parsed_json(self, file: str, directory: str, mobile_records: list):
+        """
+
+        :param file:
+        :param directory:
+        :param mobile_records:
+        :return:
+        """
+        dict_containers: defaultdict = defaultdict(list)
+        index: int = 1
         for json_data in mobile_records:
             if isinstance(json_data, dict) and json_data["type"] == "label":
                 for label in json_data["text"]:
@@ -813,7 +839,7 @@ class CSVData:
                         self.date = label.get("text")
             elif isinstance(json_data, list):
                 for data in json_data:
-                    dict_table = {}
+                    dict_table: dict = {}
                     for cell in data.get("cells", []):
                         self.parse_json(cell, dict_table)
                     self.get_specific_data_from_json(dict_table, index == 2)
@@ -822,6 +848,12 @@ class CSVData:
         self.write_parsed_data_to_csv(file, directory, dict_containers)
 
     def get_specific_data_from_json(self, dict_table, is_normal_table):
+        """
+
+        :param dict_table:
+        :param is_normal_table:
+        :return:
+        """
         if dict_table:
             self.consignee = self.get_key_by_value(self.consignee, dict_table, "Грузополучатель", is_normal_table)
             self.shipper = self.get_key_by_value(self.shipper, dict_table, "Грузоотправитель", is_normal_table)
@@ -830,28 +862,42 @@ class CSVData:
             self.tnved = self.get_key_by_value(self.tnved, dict_table, "Код ТНВЭД товара", is_normal_table)
 
     @staticmethod
-    def get_key_by_value(value_of_column, dict_table, value_to_find, is_normal_table):
+    def get_key_by_value(value_of_column: Optional[str], dict_table: dict, value_to_find: str, is_normal_table: bool) \
+            -> Optional[str]:
+        """
+
+        :param value_of_column:
+        :param dict_table:
+        :param value_to_find:
+        :param is_normal_table:
+        :return:
+        """
         for key, value in dict_table.items():
             if fuzz.ratio(value, value_to_find) > 80:
                 key = (key[0] + 1, key[1]) if is_normal_table else (key[0], key[1] + 1)
                 return dict_table[key]
         return value_of_column
 
-    def write_parsed_data_to_csv(self, file, directory, dict_containers):
-        load_data_from_db = f"{directory}/csv"
-        if not os.path.exists(load_data_from_db):
-            os.makedirs(load_data_from_db)
-        with open(f"{load_data_from_db}/{file}_parsed.csv", "w") as f:
-            writer = csv.DictWriter(f, fieldnames=['date', 'ship', 'goods_name', 'tnved', 'container_number',
-                                                   'is_valid', 'consignee', 'shipper'])
+    def write_parsed_data_to_csv(self, file: str, directory: str, dict_containers: dict) -> None:
+        """
+
+        :param file:
+        :param directory:
+        :param dict_containers:
+        :return:
+        """
+        load_data: str = f"{directory}/csv_parsed"
+        if not os.path.exists(load_data):
+            os.makedirs(load_data)
+        with open(f"{load_data}/{file}_parsed.csv", "w") as f:
+            writer: csv.DictWriter = csv.DictWriter(f, fieldnames=['date', 'ship', 'goods_name', 'container_number',
+                                                                   'tnved', 'is_valid', 'consignee', 'shipper'])
             writer.writeheader()
             for container, is_valid in dict_containers.items():
                 for validation in is_valid:
-                    writer.writerow(
-                        dict(date=self.date, ship=self.ship, goods_name=self.goods_name, tnved=self.tnved,
-                             container_number=container, is_valid=validation, consignee=self.consignee,
-                             shipper=self.shipper)
-                    )
+                    writer.writerow(dict(date=self.date, ship=self.ship, goods_name=self.goods_name, tnved=self.tnved,
+                                         container_number=container, is_valid=validation, consignee=self.consignee,
+                                         shipper=self.shipper))
 
 
 if __name__ == "__main__":
