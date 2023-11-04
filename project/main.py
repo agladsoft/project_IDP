@@ -360,20 +360,20 @@ class RecognizeTable:
     table: Optional[str] = None
 
     def __init__(self, file: str, output_directory: str, output_directory_csv: str, config_yaml_file,
-                 scripts_for_validations_and_postprocessing):
+                 scripts_validations: str):
         self.file: str = file
         self.output_directory: str = output_directory
         self.output_directory_csv: str = output_directory_csv
-        self.config_yaml_file = config_yaml_file
-        self.scripts_for_validations_and_postprocessing = scripts_for_validations_and_postprocessing
+        self.config_yaml_file: str = config_yaml_file
+        self.scripts_validations: str = scripts_validations
 
     @staticmethod
     def add_values_in_dict(ocr_json_label: dict, dict_text: dict, value: str) -> None:
         """
-
-        :param ocr_json_label:
-        :param dict_text:
-        :param value:
+        Добавление значений в словарь.
+        :param ocr_json_label: Словарь для добавления данных.
+        :param dict_text: Словарь, где содержатся текучие данные.
+        :param value: Значение из словаря.
         :return:
         """
         ocr_json_label["text"] = value
@@ -384,21 +384,20 @@ class RecognizeTable:
         ocr_json_label["score"] = dict_text[value][4]
         ocr_json_label["std"] = dict_text[value][5]
 
-    def write_to_file(self, dir_txt, str_data):
+    def write_to_file(self, dir_txt: str, str_data: str) -> None:
         """
-
-        :param dir_txt:
-        :param str_data:
+        Сохраняем данные в файл.
+        :param dir_txt: Наименование папки.
+        :param str_data: Данные.
         :return:
         """
         with open(f'{dir_txt}/{os.path.basename(f"{self.file}.txt")}', "w", encoding="utf-8") as f:
             f.write(str_data)
             logger.info(f'Write to {dir_txt}/{os.path.basename(f"{self.file}.text")}')
-            return True
 
-    def convert_image_to_text(self) -> bool:
+    def extracted_text(self) -> None:
         """
-
+        Извлекаем текст изображения.
         :return:
         """
         img: ndarray = cv2.imread(self.file, 1)
@@ -412,10 +411,10 @@ class RecognizeTable:
     @staticmethod
     def find_score_and_text(data: dict, labels: bool) -> Tuple[dict, str, list]:
         """
-
-        :param data:
-        :param labels:
-        :return:
+        Находим оценку и текст распознавания.
+        :param data: Словарь распознанных данных.
+        :param labels: Находим ли лейбл.
+        :return: Оценку и текст распознавания.
         """
         boxes: int = len(data['level'])
         list_i: list = []
@@ -444,36 +443,34 @@ class RecognizeTable:
 
     def parse_labels_from_config_file(self, data: dict, yaml_file: dict) -> None:
         """
-
-        :param data:
-        :param yaml_file:
+        Парсим лейбл из конфиг файла.
+        :param data: Словарь распознанных данных.
+        :param yaml_file: Данные конфиг файла.
         :return:
         """
         dict_text: dict = self.find_score_and_text(data, labels=True)[0]
         for value in list(dict_text.keys()):
             for len_label_in_config in range(len(yaml_file["labels"])):
                 if yaml_file["labels"][len_label_in_config]["key"].upper() in value.upper():
-                    ocr_json_label: dict = {
-                        "type": "text", "label": yaml_file["labels"][len_label_in_config]["label"]
-                    }
+                    ocr_json_label: dict = {"type": "text", "label": yaml_file["labels"][len_label_in_config]["label"]}
                     self.add_values_in_dict(ocr_json_label, dict_text, value)
                     data_validator: DataValidator = DataValidator()
                     postprocessing: str = data_validator.postprocessing(
                         yaml_file, yaml_file["labels"][len_label_in_config]["key"], len_label_in_config,
-                        self.scripts_for_validations_and_postprocessing, value
+                        self.scripts_validations, value
                     )
                     ocr_json_label["text"] = postprocessing
                     validations: bool = data_validator.validations(
-                        yaml_file, len_label_in_config, self.scripts_for_validations_and_postprocessing, postprocessing,
+                        yaml_file, len_label_in_config, self.scripts_validations, postprocessing,
                         ocr_json_label["score"]
                     )
                     ocr_json_label["is_valid"] = validations
                     self.label_list.append(ocr_json_label)
 
-    def read_config_file(self, data: dict) -> bool:
+    def read_config_file(self, data: dict) -> None:
         """
-
-        :param data:
+        Чтение конфиг файла.
+        :param data: Словарь распознанных данных.
         :return:
         """
         with open(self.config_yaml_file, "r") as stream:
@@ -487,17 +484,16 @@ class RecognizeTable:
                 self.parse_labels_from_config_file(data, yaml_file)
             except yaml.YAMLError as exc:
                 print(exc)
-            except TypeError:
-                return self.convert_image_to_text()
 
-    def convert_image_in_black_white(self) -> Optional[Tuple[ndarray, Tuple[ndarray]]]:
+    def process_image_and_segment_text(self) -> Optional[Tuple[ndarray, Tuple[ndarray]]]:
         """
-
-        :return:
+        Выполнение различных операций с изображением и сегментация текста.
+        :return: Изображение в виде матрицы.
         """
         img: ndarray = cv2.imread(self.file, 0)
-        if self.read_config_file(pytesseract.image_to_data(img, output_type='dict', lang='rus+eng')):
-            return
+        if "unknown.yml" in self.config_yaml_file.split("/")[-1]:
+            return self.extracted_text()
+        self.read_config_file(pytesseract.image_to_data(img, output_type='dict', lang='rus+eng'))
         thresh, img_bin = cv2.threshold(img, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
         img_bin: ndarray = 255 - img_bin
         kernel_len: int = np.array(img).shape[1] // self.length_of_kernel
@@ -520,10 +516,10 @@ class RecognizeTable:
     @staticmethod
     def sort_contours(contours: Tuple[ndarray], method="left-to-right") -> Tuple[Tuple[ndarray], list]:
         """
-
-        :param contours:
-        :param method:
-        :return:
+        Сортируем контуры.
+        :param contours: Контуры.
+        :param method: Метод.
+        :return: Контуры.
         """
         reverse: bool = method in ["right-to-left", "bottom-to-top"]
         i: int = 1 if method in ["top-to-bottom", "bottom-to-top"] else 0
@@ -533,10 +529,10 @@ class RecognizeTable:
 
     def add_in_box_all_contours(self, img: ndarray, contours: Tuple[ndarray]) -> Tuple[list, list]:
         """
-
-        :param img:
-        :param contours:
-        :return:
+        Добавляем контуры в список.
+        :param img: Изображение в виде матрицы.
+        :param contours: Контуры.
+        :return: Список контуров.
         """
         all_contours: list = []
         image: ndarray = img
@@ -553,7 +549,7 @@ class RecognizeTable:
     @staticmethod
     def find_parent_and_child_in_table(list_contours_with_combinations: List[tuple]):
         """
-
+        Находим родительские и дочерние ячейки в таблице.
         :param list_contours_with_combinations:
         :return:
         """
@@ -570,11 +566,11 @@ class RecognizeTable:
                     cell1.child.append(cell2)
 
     @staticmethod
-    def recognize_all_cells(box: list):
+    def recognize_all_cells(box: list) -> list:
         """
-
-        :param box:
-        :return:
+        Распознаем текст в ячейках.
+        :param box: Ячейка.
+        :return: Ячейка.
         """
         for elem_of_box in box:
             elem_of_box.recognize_and_get_structure_of_table()
@@ -582,8 +578,8 @@ class RecognizeTable:
 
     def write_to_csv(self, box: list) -> None:
         """
-
-        :param box:
+        Сохраняем данные в csv.
+        :param box: Ячейка.
         :return:
         """
         for elem_of_box in box:
@@ -594,9 +590,9 @@ class RecognizeTable:
 
     def write_to_json(self, box: list) -> list:
         """
-
-        :param box:
-        :return:
+        Сохраняем в данные в json.
+        :param box: Ячейка.
+        :return: Данные.
         """
         list_all_table: list = [{"type": "label", "text": self.label_list}]
         for elem_of_box in box:
@@ -610,11 +606,11 @@ class RecognizeTable:
 
     def main(self):
         """
-
+        Основной метод, который запускает код.
         :return:
         """
         try:
-            img, contours = self.convert_image_in_black_white()
+            img, contours = self.process_image_and_segment_text()
         except Exception as ex:
             logger.error(f"Exception is {ex}")
             return
