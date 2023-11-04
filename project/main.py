@@ -13,6 +13,7 @@ import contextlib
 import pytesseract
 import pandas as pd
 import scipy.ndimage
+from re import Match
 from PIL import Image
 from __init__ import *
 from numpy import ndarray
@@ -622,7 +623,7 @@ class RecognizeTable:
         self.recognize_all_cells(box)
         self.write_to_csv(box)
         list_all_table: list = self.write_to_json(box)
-        DataExtractor().parsed_json(os.path.basename(self.file), self.output_directory_csv, list_all_table)
+        DataExtractor().parse_json(os.path.basename(self.file), self.output_directory_csv, list_all_table)
 
 
 class Cell:
@@ -789,40 +790,41 @@ class DataExtractor:
         self.shipper: Optional[str] = None
         self.containers: List[str] = []
 
-    def iter_all_containers(self, dict_containers):
+    def validate_containers(self, dict_containers: dict) -> None:
+        """
+
+        :param dict_containers:
+        :return:
+        """
         for container in self.containers:
-            container = container.strip()
-            try:
-                if len(container.split()[0]) < 11:
-                    container = container.replace(" ", "")
-            except IndexError:
-                continue
+            container = re.sub(r"\s+", "", container.strip())
             if re.match(r"[A-Z]{4}\d{7}", container):
-                for container_number in container.split():
-                    if re.match(r"[A-Z]{4}\d{7}", container_number):
-                        con = re.match(r"[A-Z]{4}\d{7}", container_number)
-                        dict_containers[con[0]].append(True)
-                    elif len(container_number) > 10:
-                        dict_containers[container_number].append(False)
+                match_container: Optional[Match[str]] = re.match(r"[A-Z]{4}\d{7}", container)
+                dict_containers[match_container[0]].append(True)
             else:
                 dict_containers[container].append(False)
 
-    def parse_json(self, cell: Union[dict, list], dict_table: dict) -> None:
+    def get_data_from_cell(self, cell: Union[dict, list], dict_table: dict) -> None:
+        """
+
+        :param cell:
+        :param dict_table:
+        :return:
+        """
         if isinstance(cell, dict):
-            if cell.get("type") == "text":
-                col_table = cell.get("col")
-                row_table = cell.get("row")
-                text = cell.get("text")
-                dict_table[row_table, col_table] = text
-                if col_table == 0 and bool(re.match(r'^(?=.*[a-zA-ZА-Яа-я])(?=.*\d).+$', text)):
-                    self.containers.append(text)
-            elif cell.get("type") == "table":
-                self.parse_json(cell.get("cells"), dict_table)
+            if cell.get("type") == "table":
+                self.get_data_from_cell(cell.get("cells"), dict_table)
+            col_table = cell.get("col")
+            row_table = cell.get("row")
+            text = cell.get("text")
+            dict_table[row_table, col_table] = text
+            if col_table == 0 and bool(re.match(r'^(?=.*[a-zA-ZА-Яа-я])(?=.*\d).+$', text)):
+                self.containers.append(text)
         elif isinstance(cell, list):
             for dict_cell in cell:
-                self.parse_json(dict_cell, dict_table)
+                self.get_data_from_cell(dict_cell, dict_table)
 
-    def parsed_json(self, file: str, directory: str, mobile_records: list):
+    def parse_json(self, file: str, directory: str, mobile_records: list) -> None:
         """
 
         :param file:
@@ -835,19 +837,18 @@ class DataExtractor:
         for json_data in mobile_records:
             if isinstance(json_data, dict) and json_data["type"] == "label":
                 for label in json_data["text"]:
-                    if label.get("label") == "ShipAndVoyage":
-                        self.date = label.get("text")
+                    self.date = label.get("text") if label.get("label") == "ShipAndVoyage" else None
             elif isinstance(json_data, list):
                 for data in json_data:
                     dict_table: dict = {}
                     for cell in data.get("cells", []):
-                        self.parse_json(cell, dict_table)
+                        self.get_data_from_cell(cell, dict_table)
                     self.get_specific_data_from_json(dict_table, index == 2)
                 index += 1
-        self.iter_all_containers(dict_containers)
+        self.validate_containers(dict_containers)
         self.write_parsed_data_to_csv(file, directory, dict_containers)
 
-    def get_specific_data_from_json(self, dict_table, is_normal_table):
+    def get_specific_data_from_json(self, dict_table: dict, is_normal_table: bool) -> None:
         """
 
         :param dict_table:
@@ -874,7 +875,7 @@ class DataExtractor:
         """
         for key, value in dict_table.items():
             if fuzz.ratio(value, value_to_find) > 80:
-                key = (key[0] + 1, key[1]) if is_normal_table else (key[0], key[1] + 1)
+                key: tuple = (key[0] + 1, key[1]) if is_normal_table else (key[0], key[1] + 1)
                 return dict_table[key]
         return value_of_column
 
