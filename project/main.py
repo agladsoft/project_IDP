@@ -1,16 +1,14 @@
-import os.path
 import re
 import sys
 import cv2
 import csv
-import json
 import glob
 import yaml
 import math
 import magic
 import shutil
 import requests
-import psycopg2
+import warnings
 import contextlib
 import pytesseract
 import numpy as np
@@ -18,7 +16,6 @@ import pandas as pd
 import scipy.ndimage
 from PIL import Image
 from __init__ import *
-from typing import Union
 from numpy import ndarray
 from fuzzywuzzy import fuzz
 from PyPDF2 import PdfFileReader
@@ -28,8 +25,8 @@ from collections import namedtuple
 from collections import defaultdict
 from pdf2image import convert_from_path
 from configuration import Configuration
-from typing import List, Optional, Tuple
-from validations_post_processing import ValidationsAndPostProcessing
+from typing import List, Optional, Tuple, Union
+from validations_post_processing import DataValidator
 
 
 logger: getLogger = get_logger("logging")
@@ -362,58 +359,41 @@ class HandleJPG:
         return self.classification_img()
 
 
-class CustomJSONizer(json.JSONEncoder):
-    def default(self, obj):
-        return super().encode(bool(obj)) \
-            if isinstance(obj, np.bool_) \
-            else super().default(obj)
-
-
 class RecognizeTable:
-    label_list = []
-    bitnot = None
+    label_list: list = []
+    bit_not: Optional[ndarray] = None
 
-    length_of_kernel = None
-    min_height_of_cell = None
-    min_width_of_cell = None
-    indent_x_text_of_cells = None
-    indent_y_text_of_cells = None
-    config_for_pytesseract = None
+    length_of_kernel: Optional[int] = None
+    min_height_of_cell: Optional[int] = None
+    min_width_of_cell: Optional[int] = None
+    indent_x_text_of_cells: Optional[int] = None
+    indent_y_text_of_cells: Optional[int] = None
+    config_for_pytesseract: Optional[str] = None
 
-    database = None
-    user = None
-    password = None
-    host = None
-    port = None
-    table = None
+    database: Optional[str] = None
+    user: Optional[str] = None
+    password: Optional[str] = None
+    host: Optional[str] = None
+    port: Optional[str] = None
+    table: Optional[str] = None
 
-    def __init__(self, file, output_directory, output_directory_csv, config_yaml_file,
+    def __init__(self, file: str, output_directory: str, output_directory_csv: str, config_yaml_file,
                  scripts_for_validations_and_postprocessing):
-        self.file = file
-        self.output_directory = output_directory
-        self.output_directory_csv = output_directory_csv
+        self.file: str = file
+        self.output_directory: str = output_directory
+        self.output_directory_csv: str = output_directory_csv
         self.config_yaml_file = config_yaml_file
         self.scripts_for_validations_and_postprocessing = scripts_for_validations_and_postprocessing
 
     @staticmethod
-    def remove_duplicate_empty_lines(lst):
-        result_text = []
-        result_top = []
-        result_left = []
-        result_width = []
-        prev_empty = False
-        for list_text, list_top, list_left, list_width in zip(lst["text"], lst["top"], lst["left"], lst["width"]):
-            if list_text.strip() == '' and prev_empty:
-                continue
-            result_text.append(list_text)
-            result_top.append(list_top)
-            result_left.append(list_left)
-            result_width.append(list_width)
-            prev_empty = list_text.strip() == ''
-        return result_text, result_top, result_left, result_width
+    def add_values_in_dict(ocr_json_label: dict, dict_text: dict, value: str) -> None:
+        """
 
-    @staticmethod
-    def add_values_in_dict(ocr_json_label, dict_text, value):
+        :param ocr_json_label:
+        :param dict_text:
+        :param value:
+        :return:
+        """
         ocr_json_label["text"] = value
         ocr_json_label["xmin"] = dict_text[value][0]
         ocr_json_label["ymin"] = dict_text[value][1]
@@ -422,151 +402,184 @@ class RecognizeTable:
         ocr_json_label["score"] = dict_text[value][4]
         ocr_json_label["std"] = dict_text[value][5]
 
-    @staticmethod
-    def split_text_paragraphs(data, threshold):
-        str_data = ""
-        for i in range(len(data["text"]) - 1):
-            if data["text"][i]:
-                str_data += f"{data['text'][i + 1]} "
-            elif data["top"][i + 1] - data["top"][i - 1] > 15:
-                prefix = "\n"
-                if data["right"][i - 1] > threshold:
-                    prefix = ""
-                str_data += f"{prefix}{data['text'][i + 1]} "
-            else:
-                str_data += f"{data['text'][i + 1]} "
-        return str_data
-
     def write_to_file(self, dir_txt, str_data):
+        """
+
+        :param dir_txt:
+        :param str_data:
+        :return:
+        """
         with open(f'{dir_txt}/{os.path.basename(f"{self.file}.txt")}', "w", encoding="utf-8") as f:
             f.write(str_data)
             logger.info(f'Write to {dir_txt}/{os.path.basename(f"{self.file}.text")}')
             return True
 
-    def convert_image_to_text(self):
-        img = cv2.imread(self.file, 1)
-        dir_txt = f"{os.path.dirname(self.output_directory)}/txt"
+    def convert_image_to_text(self) -> bool:
+        """
+
+        :return:
+        """
+        img: ndarray = cv2.imread(self.file, 1)
+        dir_txt: str = f"{os.path.dirname(self.output_directory)}/txt"
         if not os.path.exists(dir_txt):
             os.makedirs(dir_txt)
         noiseless_image_colored = cv2.fastNlMeansDenoisingColored(img, None, 20, 20, 7, 21)
-        data = pytesseract.image_to_string(noiseless_image_colored, output_type="dict", lang='rus+eng')
+        data: dict = pytesseract.image_to_string(noiseless_image_colored, output_type="dict", lang='rus+eng')
         return self.write_to_file(dir_txt, data["text"])
 
     @staticmethod
-    def find_score_and_text(data, labels=None):
-        boxes = len(data['level'])
-        list_i = []
-        dict_text = {}
-        list_score = []
-        text_ocr = ''
+    def find_score_and_text(data: dict, labels: bool) -> Tuple[dict, str, list]:
+        """
+
+        :param data:
+        :param labels:
+        :return:
+        """
+        boxes: int = len(data['level'])
+        list_i: list = []
+        dict_text: dict = {}
+        list_score: list = []
+        text_ocr: str = ''
+        x_min = y_min = x_max = y_max = 0
         for i in range(boxes):
             (x, y, w, h) = (data["left"][i], data["top"][i], data["width"][i], data["height"][i])
             if data["text"][i] and not list_i[-1]:
                 text_ocr = str(data["text"][i]) if labels else " ".join(data["text"])
-                x_min = x
-                y_min = y
+                x_min, y_min = x, y
                 list_score.clear()
                 list_score.append(data["conf"][i])
             if data["text"][i] and list_i[-1] and labels:
                 text_ocr += " " + str(data["text"][i])
                 list_score.append(data["conf"][i])
-                x_max = x + w
-                y_max = y + h
+                x_max, y_max = x + w, y + h
             elif not data["text"][i]:
-                with contextlib.suppress(Exception):
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", category=RuntimeWarning)
                     dict_text[text_ocr] = (x_min, y_min, x_max, y_max, np.mean(list_score), np.std(list_score))
             list_i.append(data["text"][i])
 
         return dict_text, text_ocr, list_score
 
-    def load_config_file(self, data):
+    def parse_labels_from_config_file(self, data: dict, yaml_file: dict) -> None:
+        """
+
+        :param data:
+        :param yaml_file:
+        :return:
+        """
+        dict_text: dict = self.find_score_and_text(data, labels=True)[0]
+        for value in list(dict_text.keys()):
+            for len_label_in_config in range(len(yaml_file["labels"])):
+                if yaml_file["labels"][len_label_in_config]["key"].upper() in value.upper():
+                    ocr_json_label: dict = {
+                        "type": "text", "label": yaml_file["labels"][len_label_in_config]["label"]
+                    }
+                    self.add_values_in_dict(ocr_json_label, dict_text, value)
+                    data_validator: DataValidator = DataValidator()
+                    postprocessing: str = data_validator.postprocessing(
+                        yaml_file, yaml_file["labels"][len_label_in_config]["key"], len_label_in_config,
+                        self.scripts_for_validations_and_postprocessing, value
+                    )
+                    ocr_json_label["text"] = postprocessing
+                    validations: bool = data_validator.validations(
+                        yaml_file, len_label_in_config, self.scripts_for_validations_and_postprocessing, postprocessing,
+                        ocr_json_label["score"]
+                    )
+                    ocr_json_label["is_valid"] = validations
+                    self.label_list.append(ocr_json_label)
+
+    def read_config_file(self, data: dict) -> bool:
+        """
+
+        :param data:
+        :return:
+        """
         with open(self.config_yaml_file, "r") as stream:
             try:
-                yaml_file = yaml.safe_load(stream)
+                yaml_file: dict = yaml.safe_load(stream)
                 self.length_of_kernel, self.min_height_of_cell, self.min_width_of_cell, self.indent_x_text_of_cells, \
                     self.indent_y_text_of_cells, self.config_for_pytesseract = \
                     Configuration().config_of_tables(yaml_file)
                 self.database, self.user, self.password, self.host, self.port, self.table = \
                     Configuration().config_of_database(yaml_file)
-                dict_text = self.find_score_and_text(data, labels=True)[0]
-                for value in list(dict_text.keys()):
-                    for len_label_in_config in range(len(yaml_file["labels"])):
-                        ocr_json_label = {}
-                        if yaml_file["labels"][len_label_in_config]["key"].upper() in value.upper():
-                            ocr_json_label["type"] = "text"
-                            ocr_json_label["label"] = yaml_file["labels"][len_label_in_config]["label"]
-                            self.add_values_in_dict(ocr_json_label, dict_text, value)
-                            postprocessing = ValidationsAndPostProcessing().postprocessing(yaml_file,
-                                                                                           yaml_file["labels"][len_label_in_config]["key"],
-                                                                                           len_label_in_config,
-                                                                                           self.scripts_for_validations_and_postprocessing,
-                                                                                           value)
-                            ocr_json_label["text"] = postprocessing
-                            validations = ValidationsAndPostProcessing().validations(yaml_file, len_label_in_config,
-                                                                                     self.scripts_for_validations_and_postprocessing,
-                                                                                     postprocessing,
-                                                                                     ocr_json_label["score"])
-                            ocr_json_label["is_valid"] = bool(validations)
-                            self.label_list.append(ocr_json_label)
+                self.parse_labels_from_config_file(data, yaml_file)
             except yaml.YAMLError as exc:
                 print(exc)
             except TypeError:
                 return self.convert_image_to_text()
 
-    def convert_image_in_black_white(self):
-        img = cv2.imread(self.file, 0)
-        with contextlib.suppress(Exception):
-            if self.load_config_file(pytesseract.image_to_data(img, output_type='dict', lang='rus+eng')):
-                return
+    def convert_image_in_black_white(self) -> Optional[Tuple[ndarray, Tuple[ndarray]]]:
+        """
+
+        :return:
+        """
+        img: ndarray = cv2.imread(self.file, 0)
+        if self.read_config_file(pytesseract.image_to_data(img, output_type='dict', lang='rus+eng')):
+            return
         thresh, img_bin = cv2.threshold(img, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-        img_bin = 255 - img_bin
-        kernel_len = np.array(img).shape[1] // self.length_of_kernel
-        ver_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, kernel_len))
-        hor_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_len, 1))
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-        image_1 = cv2.erode(img_bin, ver_kernel, iterations=3)
-        vertical_lines = cv2.dilate(image_1, ver_kernel, iterations=3)
-        image_2 = cv2.erode(img_bin, hor_kernel, iterations=3)
-        horizontal_lines = cv2.dilate(image_2, hor_kernel, iterations=3)
-        img_vh = cv2.addWeighted(vertical_lines, 0.5, horizontal_lines, 0.5, 0.0)
+        img_bin: ndarray = 255 - img_bin
+        kernel_len: int = np.array(img).shape[1] // self.length_of_kernel
+        ver_kernel: ndarray = cv2.getStructuringElement(cv2.MORPH_RECT, (1, kernel_len))
+        hor_kernel: ndarray = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_len, 1))
+        kernel: ndarray = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+        image_1: ndarray = cv2.erode(img_bin, ver_kernel, iterations=3)
+        vertical_lines: ndarray = cv2.dilate(image_1, ver_kernel, iterations=3)
+        image_2: ndarray = cv2.erode(img_bin, hor_kernel, iterations=3)
+        horizontal_lines: ndarray = cv2.dilate(image_2, hor_kernel, iterations=3)
+        img_vh: ndarray = cv2.addWeighted(vertical_lines, 0.5, horizontal_lines, 0.5, 0.0)
         img_vh = cv2.erode(~img_vh, kernel, iterations=2)
         thresh, img_vh = cv2.threshold(img_vh, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-        bitxor = cv2.bitwise_xor(img, img_vh)
-        self.bitnot = cv2.bitwise_not(bitxor)
+        bitxor: ndarray = cv2.bitwise_xor(img, img_vh)
+        self.bit_not = cv2.bitwise_not(bitxor)
         contours, hierarchy = cv2.findContours(img_vh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         contours, boundingBoxes = self.sort_contours(contours, method="top-to-bottom")
-        return img, contours, self.bitnot, self.indent_x_text_of_cells, self.indent_y_text_of_cells, self.config_for_pytesseract
+        return img, contours
 
-    def sort_contours(self, cnts, method="left-to-right"):
-        reverse = method in ["right-to-left", "bottom-to-top"]
-        i = 1 if method in ["top-to-bottom", "bottom-to-top"] else 0
-        # construct the list of bounding boxes and sort them from top to
-        # bottom
-        boundingBoxes = [cv2.boundingRect(c) for c in cnts]
-        cnts, boundingBoxes = zip(*sorted(zip(cnts, boundingBoxes),
-                                          key=lambda b: b[1][i], reverse=reverse))
-        # return the list of sorted contours and bounding boxes
-        return cnts, boundingBoxes
+    @staticmethod
+    def sort_contours(contours: Tuple[ndarray], method="left-to-right") -> Tuple[Tuple[ndarray], list]:
+        """
 
-    def add_in_box_all_contours(self, img, contours, bitnot, indent_x_text_of_cells, indent_y_text_of_cells, config_for_pytesseract):
-        all_contours = []
-        image = img
+        :param contours:
+        :param method:
+        :return:
+        """
+        reverse: bool = method in ["right-to-left", "bottom-to-top"]
+        i: int = 1 if method in ["top-to-bottom", "bottom-to-top"] else 0
+        boundingBoxes: list = [cv2.boundingRect(c) for c in contours]
+        contours, boundingBoxes = zip(*sorted(zip(contours, boundingBoxes), key=lambda b: b[1][i], reverse=reverse))
+        return contours, boundingBoxes
+
+    def add_in_box_all_contours(self, img: ndarray, contours: Tuple[ndarray]) -> Tuple[list, list]:
+        """
+
+        :param img:
+        :param contours:
+        :return:
+        """
+        all_contours: list = []
+        image: ndarray = img
         for c in contours:
             x, y, w, h = cv2.boundingRect(c)
             if (w != img.shape[1] and h != img.shape[0]) and h > self.min_height_of_cell and w > self.min_width_of_cell:
                 all_contours.append([x, y, w, h])
                 image = cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
-        box = [Cell(img, *contour, bitnot, indent_x_text_of_cells, indent_y_text_of_cells, config_for_pytesseract) for contour in
-               all_contours]
+        box: list = [Cell(img, *contour, self.bit_not, self.indent_x_text_of_cells, self.indent_y_text_of_cells,
+                     self.config_for_pytesseract) for contour in all_contours]
         cv2.imwrite(self.output_directory_csv + "/" + os.path.basename(f"{self.file}"), image)
         return box, list(combinations(box, 2))
 
-    def find_parent_and_childs_in_table(self, list_contours_with_combinations):
+    @staticmethod
+    def find_parent_and_child_in_table(list_contours_with_combinations: List[tuple]):
+        """
+
+        :param list_contours_with_combinations:
+        :return:
+        """
         for cell1, cell2 in list_contours_with_combinations:
-            if all(cell1 > cell2):
+            if cell1 > cell2:
                 if cell2.parent is not None:
-                    cell3 = cell2.parent
-                    if all(cell3 > cell1):
+                    cell3: Cell = cell2.parent
+                    if cell3 > cell1:
                         cell3.childs.remove(cell2)
                         cell2.parent = cell1
                         cell1.childs.append(cell2)
@@ -574,64 +587,66 @@ class RecognizeTable:
                     cell2.parent = cell1
                     cell1.childs.append(cell2)
 
-    def recognize_all_cells(self, box):
+    @staticmethod
+    def recognize_all_cells(box: list):
+        """
+
+        :param box:
+        :return:
+        """
         for elem_of_box in box:
             elem_of_box.recognize_and_get_structure_of_table()
         return box
 
-    def write_to_csv(self, box):
-        for elem_of_box in box:
-            df = elem_of_box.to_dataframe()
-            if df is not None:
-                df.to_csv(self.output_directory_csv + "/" + os.path.basename(f"{self.file}_{elem_of_box.x1}"
-                                                                             f"_{elem_of_box.y1}.csv"),
-                          encoding="utf-8", index=False)
+    def write_to_csv(self, box: list) -> None:
+        """
 
-    def write_to_json(self, box):
-        list_all_table = [{"type": "label", "text": self.label_list}]
+        :param box:
+        :return:
+        """
+        for elem_of_box in box:
+            df: Optional[pd.DataFrame] = elem_of_box.to_dataframe()
+            if df is not None:
+                file: str = f"{self.file}_{elem_of_box.x1}_{elem_of_box.y1}.csv"
+                df.to_csv(f'{self.output_directory_csv}/{os.path.basename(file)}', encoding="utf-8", index=False)
+
+    def write_to_json(self, box: list) -> list:
+        """
+
+        :param box:
+        :return:
+        """
+        list_all_table: list = [{"type": "label", "text": self.label_list}]
         for elem_of_box in box:
             if elem_of_box.parent:
                 continue
-            json_list = elem_of_box.to_json()
+            json_list: list = elem_of_box.to_json()
             list_all_table.append(json_list)
-
-        with open(self.output_directory + "/" + os.path.basename(f"{self.file}.json"), "w", encoding="utf-8") as f:
-            json.dump(list_all_table, f, ensure_ascii=False, indent=4, cls=CustomJSONizer)
-
+        with open(f'{self.output_directory}/{os.path.basename(f"{self.file}.json")}', "w", encoding="utf-8") as f:
+            json.dump(list_all_table, f, ensure_ascii=False, indent=4, cls=CustomJSON)
         return list_all_table
 
-    def push_to_db(self, list_all_table):
-        try:
-            conn = psycopg2.connect(database=self.database, user=self.user, password=self.password, host=self.host,
-                                    port=self.port)
-            cur = conn.cursor()
-            data_json = json.dumps(list_all_table, ensure_ascii=False, indent=4, cls=CustomJSONizer)
-            sql = f"INSERT INTO {self.table} (image, url_image, data_json) VALUES (%s, %s, %s)"
-            val = (f'upload/{os.path.basename(self.file)}', f'{os.path.basename(self.file)}', data_json)
-            cur.execute(sql, val)
-            cur.close()
-            conn.commit()
-            conn.close()
-        except Exception as exception:
-            print(exception)
-
     def main(self):
+        """
+
+        :return:
+        """
         try:
-            img, contours, bitnot, indent_x_text_of_cells, indent_y_text_of_cells, config_for_pytesseract = self.convert_image_in_black_white()
+            img, contours = self.convert_image_in_black_white()
         except Exception as ex:
-            print(ex)
+            logger.error(f"Exception is {ex}")
             return
-        box, list_combinations = self.add_in_box_all_contours(img, contours, bitnot, indent_x_text_of_cells, indent_y_text_of_cells, config_for_pytesseract)
-        self.find_parent_and_childs_in_table(list_combinations)
+        box, list_combinations = self.add_in_box_all_contours(img, contours)
+        self.find_parent_and_child_in_table(list_combinations)
         self.recognize_all_cells(box)
         self.write_to_csv(box)
-        list_all_table = self.write_to_json(box)
-        # self.push_to_db(list_all_table)
+        list_all_table: list = self.write_to_json(box)
         CSVData().parsed_json_from_db(os.path.basename(self.file), self.output_directory_csv, list_all_table)
 
 
 class Cell:
-    def __init__(self, img, x1, y1, width, height, bitnot, indent_x_text_of_cells, indent_y_text_of_cells, config_for_pytesseract):
+    def __init__(self, img, x1, y1, width, height, bitnot, indent_x_text_of_cells, indent_y_text_of_cells,
+                 config_for_pytesseract):
         self.img = img
         self.parent = None
         self.childs = []
@@ -653,7 +668,7 @@ class Cell:
         self.child_max_col = None
 
     def __gt__(self, other):
-        return self.x1 <= other.x1, self.y1 <= other.y1, self.x2 >= other.x2, self.y2 >= other.y2
+        return all((self.x1 <= other.x1, self.y1 <= other.y1, self.x2 >= other.x2, self.y2 >= other.y2))
 
     def __str__(self):
         coords = self.x1, self.y1, self.x2, self.y2
@@ -666,10 +681,12 @@ class Cell:
         if self.childs:
             bitnot2 = self.bitnot.copy()
             for coordinates in self.childs:
-                cv2.rectangle(bitnot2, (coordinates.x1, coordinates.y1), (coordinates.x2, coordinates.y2), (255, 255, 255), -1)
+                cv2.rectangle(bitnot2, (coordinates.x1, coordinates.y1), (coordinates.x2, coordinates.y2), (255, 255,
+                                                                                                            255), -1)
         else:
             bitnot2 = self.bitnot
-        finalimg = bitnot2[self.y1 + self.indent_x_text_of_cells : self.y2 - self.indent_x_text_of_cells, (self.x1 + self.indent_y_text_of_cells) : self.x2 - self.indent_y_text_of_cells]
+        finalimg = bitnot2[self.y1 + self.indent_x_text_of_cells: self.y2 - self.indent_x_text_of_cells,
+                           self.x1 + self.indent_y_text_of_cells: self.x2 - self.indent_y_text_of_cells]
 
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 1))
         resizing = cv2.resize(finalimg, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
@@ -681,7 +698,7 @@ class Cell:
 
         dict_text, out, list_score = RecognizeTable.find_score_and_text(text, labels=False)
         inner = out.strip()
-        inner = inner.translate({ord(c): " " for c in "!@#$%^&*()[]{};<>?\|`~-=_+"})
+        inner = inner.translate({ord(c): " " for c in r"!@#$%^&*()[]{};<>?\|`~-=_+"})
         self.text = inner
         self.score = np.mean(list_score) if len(list_score) != 0 else None
         self.std = np.std(list_score) if len(list_score) != 0 else None
@@ -773,13 +790,14 @@ class CSVData:
         for container in self.containers:
             container = container.strip()
             try:
-                if len(container.split()[0]) < 11: container = container.replace(" ", "")
+                if len(container.split()[0]) < 11:
+                    container = container.replace(" ", "")
             except IndexError:
                 continue
-            if re.match("[A-Z]{4}\d{7}", container):
+            if re.match(r"[A-Z]{4}\d{7}", container):
                 for container_number in container.split():
-                    if re.match("[A-Z]{4}\d{7}", container_number):
-                        con = re.match("[A-Z]{4}\d{7}", container_number)
+                    if re.match(r"[A-Z]{4}\d{7}", container_number):
+                        con = re.match(r"[A-Z]{4}\d{7}", container_number)
                         dict_containers[con[0]].append(True)
                     elif len(container_number) > 10:
                         dict_containers[container_number].append(False)

@@ -1,7 +1,7 @@
 from importlib import machinery
 
 
-class ValidationsAndPostProcessing:
+class DataValidator:
 
     @staticmethod
     def postprocessing(yaml_file, label, len_label_in_config, scripts_for_validations_and_postprocessing, value):

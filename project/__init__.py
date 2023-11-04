@@ -1,4 +1,5 @@
 import os
+import json
 from logging.handlers import RotatingFileHandler
 from logging import Formatter, getLogger, INFO, StreamHandler
 
@@ -35,3 +36,10 @@ def get_logger(name: str) -> getLogger:
     logger.addHandler(get_stream_handler())
     logger.setLevel(INFO)
     return logger
+
+
+class CustomJSON(json.JSONEncoder):
+    def default(self, obj):
+        return super().encode(bool(obj)) \
+            if isinstance(obj, np.bool_) \
+            else super().default(obj)

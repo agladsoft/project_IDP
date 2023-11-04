@@ -13,7 +13,7 @@ class Configuration:
             indent_y_text_of_cells = yaml_file['config_of_table']['indent_y_text_of_cells']
             config_for_pytesseract = yaml_file['config_of_table']['config_for_pytesseract']
             return length_of_kernel, min_height_of_cell, min_width_of_cell, indent_x_text_of_cells, \
-                   indent_y_text_of_cells, config_for_pytesseract
+                indent_y_text_of_cells, config_for_pytesseract
 
     @staticmethod
     def config_of_database(yaml_file):
