@@ -11,7 +11,6 @@ import requests
 import warnings
 import contextlib
 import pytesseract
-import numpy as np
 import pandas as pd
 import scipy.ndimage
 from PIL import Image
