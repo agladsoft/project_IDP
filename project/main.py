@@ -275,10 +275,10 @@ class HandleJPG:
     @staticmethod
     def _rotate_image(image: ndarray, angle: float) -> ndarray:
         """
-
-        :param image:
-        :param angle:
-        :return:
+        Повернуть изображение на определенный угол.
+        :param image: Изображение в виде матрицы.
+        :param angle: Угол, на который нужно повернуть.
+        :return: Перевернутое изображение в виде матрицы.
         """
         (h, w) = image.shape[:2]
         center: Tuple[int, int] = (w // 2, h // 2)
@@ -297,7 +297,7 @@ class HandleJPG:
         :param file_name: Наименование файла.
         :param yaml_file: Словарь с настройками конфиг файла.
         :param label_in_config: Наименование категории из конфиг файла.
-        :return: Категорию из конфиг файла.
+        :return: Категория из конфиг файла.
         """
         directory: str = yaml_file[label_in_config]['folder']
         file: str = f"{directory}/{os.path.basename(file_name)}"
@@ -311,15 +311,15 @@ class HandleJPG:
 
     def read_config_file(self, str_of_doc: str, file_name: str, predict: Optional[str] = None) -> str:
         """
-
-        :param str_of_doc:
-        :param file_name:
-        :param predict:
-        :return:
+        Прочитать конфиг файл и определить нужную категорию для файла.
+        :param str_of_doc: Строки из прочитанного документа.
+        :param file_name: Наименования файла.
+        :param predict: Категория из конфиг файла.
+        :return: Категория из конфиг файла.
         """
         with open(f"{self.configs}/classification.yml", "r") as stream:
             try:
-                yaml_file = yaml.safe_load(stream)
+                yaml_file: dict = yaml.safe_load(stream)
                 for label_in_config in yaml_file:
                     if yaml_file[label_in_config]["key"].upper() in str_of_doc.upper():
                         predict = self.move_file(file_name, yaml_file, label_in_config)
@@ -332,8 +332,8 @@ class HandleJPG:
 
     def classification_img(self) -> str:
         """
-
-        :return:
+        Классификация файла по совпадению слов.
+        :return: Категория из конфиг файла.
         """
         image: Image = Image.open(self.input_file)
         ocr_df: pd.DataFrame = pytesseract.image_to_data(image, output_type='data.frame', lang='rus+eng')
@@ -354,8 +354,8 @@ class HandleJPG:
 
     def main(self) -> str:
         """
-
-        :return:
+        Основной метод, который запускает код.
+        :return: Категория из конфиг файла.
         """
         self.turn_img()
         self.correct_skew(delta=1, limit=60)
