@@ -1,3 +1,4 @@
+import os.path
 import re
 import sys
 import cv2
@@ -161,7 +162,7 @@ class HandleJPG:
 
     def turn_img(self):
         """
-        Поворот изображения.
+        Поворот изображения на прямой угол (90, 180, 270).
         :return:
         """
         if not os.path.exists(self.classification):
@@ -176,26 +177,32 @@ class HandleJPG:
         rotated: ndarray = self.rotate(image, angle_rotated_image, (0, 0, 0))
         self.save_file(angle_rotated_image, rotated, "Поворот изображений на прямой угол")
 
-    def correct_skew(self, delta, limit):
+    def correct_skew(self, delta: int, limit: int) -> None:
+        """
+        Поворот изображения на маленький угол.
+        :param delta: Шаг для нахождения нужного угла.
+        :param limit: Максимальный допустимый угол для поворота.
+        :return:
+        """
         image: ndarray = cv2.imread(self.input_file)
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
 
-        X_Y = namedtuple("X_Y", "x y")
-        dict_angle_and_score = {0: X_Y(0, self._determine_score(thresh, 0))}
-        best_angle = 0
+        X_Y: namedtuple = namedtuple("X_Y", "x y")
+        dict_angle_and_score: dict = {0: X_Y(0, self._determine_score(thresh, 0))}
+        best_angle: Union[int, float] = 0
         for angle in range(1, limit, delta):
             dict_angle_and_score[angle] = X_Y(angle, self._determine_score(thresh, angle))
             dict_angle_and_score[-angle] = X_Y(-angle, self._determine_score(thresh, -angle))
-            sorted_x_y = sorted(dict_angle_and_score.values(), key=lambda xy: xy.y)
-            max_value = sorted_x_y[-1]
-            min_value = sorted_x_y[0]
+            sorted_x_y: list = sorted(dict_angle_and_score.values(), key=lambda xy: xy.y)
+            max_value: X_Y = sorted_x_y[-1]
+            min_value: X_Y = sorted_x_y[0]
             if max_value.y > min_value.y * 10:
-                left = dict_angle_and_score.get(max_value.x - 1)
-                right = dict_angle_and_score.get(max_value.x + 1)
+                left: X_Y = dict_angle_and_score.get(max_value.x - 1)
+                right: X_Y = dict_angle_and_score.get(max_value.x + 1)
                 if left and right:
                     best_angle = self._golden_ratio(left.x, right.x, 0.1, thresh)
-                    best_score = self._determine_score(thresh, best_angle)
+                    best_score: float = self._determine_score(thresh, best_angle)
                     if best_score > min_value.y * 100:
                         break
                     else:
@@ -204,12 +211,12 @@ class HandleJPG:
         corrected: ndarray = self._rotate_image(image, best_angle)
         self.save_file(best_angle, corrected, "Выравнивание изображений под маленьким углом")
 
-    def save_file(self, angle: Union[int, float], ndarray_image: ndarray, message_to_send: str):
+    def save_file(self, angle: Union[int, float], ndarray_image: ndarray, message_to_send: str) -> None:
         """
-
-        :param angle:
-        :param ndarray_image:
-        :param message_to_send:
+        Сохраняем перевернутое изображение.
+        :param angle: Угол, на который повернули.
+        :param ndarray_image: Изображение в виде матрицы.
+        :param message_to_send: Сообщение для отправки и логирования.
         :return:
         """
         file_name: str = os.path.basename(self.input_file)
@@ -223,49 +230,50 @@ class HandleJPG:
             })
 
     @staticmethod
-    def _determine_score(arr, angle):
+    def _determine_score(arr: ndarray, angle: Union[int, float]) -> float:
         """
-
-        :param arr:
-        :param angle:
+        Определяем наилучший результат для угла.
+        :param arr: Изображение в виде матрицы.
+        :param angle: Угол, на который нужно повернуть.
         :return:
         """
-        data = scipy.ndimage.rotate(arr, angle, reshape=False, order=0)
-        histogram = np.sum(data, axis=1, dtype=float)
-        score = np.sum((histogram[1:] - histogram[:-1]) ** 2, dtype=float)
+        data: ndarray = scipy.ndimage.rotate(arr, angle, reshape=False, order=0)
+        histogram: ndarray = np.sum(data, axis=1, dtype=float)
+        score: np.array_api.float64 = np.sum((histogram[1:] - histogram[:-1]) ** 2, dtype=float)
         return score // 100000000
 
-    def _golden_ratio(self, left, right, delta, thresh):
+    def _golden_ratio(self, left: int, right: int, delta: float, thresh: ndarray) -> Union[int, float]:
         """
-
-        :param left:
-        :param right:
-        :param delta:
-        :param thresh:
-        :return:
+        Определяем лучший угол для поворота (по золотому сечению). Вот ссылка для ознакомления
+        https://en.wikipedia.org/wiki/Golden_ratio
+        :param left: Минимальный диапазон для нахождения угла.
+        :param right: Максимальный диапазон для нахождения угла.
+        :param delta: Минимальный диапазон для нахождения угла.
+        :param thresh: Изображение в виде матрицы.
+        :return: Наилучший найденный угол для поворота.
         """
-        res_phi = 2 - (1 + math.sqrt(5)) / 2
+        res_phi: float = 2 - (1 + math.sqrt(5)) / 2
         x1, x2 = left + res_phi * (right - left), right - res_phi * (right - left)
         f1, f2 = self._determine_score(thresh, x1), self._determine_score(thresh, x2)
-        scores = []
-        angles = []
+        scores: List[float] = []
+        angles: List[float] = []
         while abs(right - left) > delta:
             if f1 < f2:
                 left, x1, f1 = x1, x2, f2
-                x2 = right - res_phi * (right - left)
-                f2 = self._determine_score(thresh, x2)
+                x2: float = right - res_phi * (right - left)
+                f2: float = self._determine_score(thresh, x2)
                 scores.append(f2)
                 angles.append(x2)
             else:
                 right, x2, f2 = x2, x1, f1
-                x1 = left + res_phi * (right - left)
-                f1 = self._determine_score(thresh, x1)
+                x1: float = left + res_phi * (right - left)
+                f1: float = self._determine_score(thresh, x1)
                 scores.append(f1)
                 angles.append(x1)
         return (x1 + x2) / 2
 
     @staticmethod
-    def _rotate_image(image, angle):
+    def _rotate_image(image: ndarray, angle: float) -> ndarray:
         """
 
         :param image:
@@ -273,8 +281,8 @@ class HandleJPG:
         :return:
         """
         (h, w) = image.shape[:2]
-        center = (w // 2, h // 2)
-        M = cv2.getRotationMatrix2D(center, angle, 1.0)
+        center: Tuple[int, int] = (w // 2, h // 2)
+        M: ndarray = cv2.getRotationMatrix2D(center, angle, 1.0)
         return cv2.warpAffine(
             image,
             M,
@@ -283,7 +291,25 @@ class HandleJPG:
             borderMode=cv2.BORDER_REPLICATE,
         )
 
-    def move_file_in_dir(self, str_of_doc, file_name, predict=None):
+    def move_file(self, file_name: str, yaml_file: dict, label_in_config: str) -> str:
+        """
+        Переместить файл в категорию классификаций.
+        :param file_name: Наименование файла.
+        :param yaml_file: Словарь с настройками конфиг файла.
+        :param label_in_config: Наименование категории из конфиг файла.
+        :return: Категорию из конфиг файла.
+        """
+        directory: str = yaml_file[label_in_config]['folder']
+        file: str = f"{directory}/{os.path.basename(file_name)}"
+        os.remove(file) if os.path.isfile(file) else None
+        if os.path.isfile(file_name):
+            shutil.copy2(file_name, f'{os.path.dirname(self.dir_main)}/{directory}')
+            os.remove(file_name)
+        else:
+            shutil.move(file_name, f'{os.path.dirname(self.dir_main)}/{directory}')
+        return yaml_file[label_in_config]['name']
+
+    def read_config_file(self, str_of_doc: str, file_name: str, predict: Optional[str] = None) -> str:
         """
 
         :param str_of_doc:
@@ -296,48 +322,28 @@ class HandleJPG:
                 yaml_file = yaml.safe_load(stream)
                 for label_in_config in yaml_file:
                     if yaml_file[label_in_config]["key"].upper() in str_of_doc.upper():
-                        with contextlib.suppress(OSError):
-                            os.remove(yaml_file[label_in_config]['folder'] + '/' + os.path.basename(file_name))
-                        if os.path.isfile(file_name):
-                            shutil.copy2(file_name, f'{os.path.dirname(self.dir_main)}' 
-                                                    f'/{yaml_file[label_in_config]["folder"]}')
-                            os.remove(file_name)
-                        else:
-                            shutil.move(file_name, f'{os.path.dirname(self.dir_main)}'
-                                                   f'/{yaml_file[label_in_config]["folder"]}')
-                        predict = yaml_file[label_in_config]['name']
-
+                        predict = self.move_file(file_name, yaml_file, label_in_config)
                 if not predict:
                     logger.info(f'Filename: {os.path.basename(self.input_file)}, text: {str_of_doc}')
-                    with contextlib.suppress(OSError):
-                        os.remove(yaml_file[label_in_config]['folder'] + '/' +
-                                  os.path.basename(file_name))
-                    if os.path.isfile(file_name):
-                        shutil.copy2(file_name, f'{os.path.dirname(self.dir_main)}/'
-                                                f'{yaml_file["unknown"]["folder"]}')
-                        os.remove(file_name)
-                    else:
-                        shutil.move(file_name, f'{os.path.dirname(self.dir_main)}/'
-                                               f'{yaml_file["unknown"]["folder"]}')
-                    predict = yaml_file["unknown"]['name']
+                    predict = self.move_file(file_name, yaml_file, "folder")
             except yaml.YAMLError as exc:
                 print("Exception", exc)
         return predict
 
-    def classification_img(self):
+    def classification_img(self) -> str:
         """
 
         :return:
         """
-        image = Image.open(self.input_file)
-        ocr_df = pytesseract.image_to_data(image, output_type='data.frame', lang='rus+eng')
-        float_cols = ocr_df.select_dtypes('float').columns
+        image: Image = Image.open(self.input_file)
+        ocr_df: pd.DataFrame = pytesseract.image_to_data(image, output_type='data.frame', lang='rus+eng')
+        float_cols: pd.Index = ocr_df.select_dtypes('float').columns
         ocr_df[float_cols] = ocr_df[float_cols].round(0).astype(int)
         ocr_df = ocr_df.replace(r'^\s*$', np.nan, regex=True)
         ocr_df = ocr_df.dropna().reset_index(drop=True)
-        words = list(ocr_df.text)
-        str_of_doc = " ".join(words[:20])
-        predict = self.move_file_in_dir(str_of_doc, self.input_file)
+        words: list = list(ocr_df.text)
+        str_of_doc: str = " ".join(words[:20])
+        predict: str = self.read_config_file(str_of_doc, self.input_file)
         logger.info(f'Filename: {os.path.basename(self.input_file)}, Predict class: {predict}')
         with contextlib.suppress(Exception):
             requests.post(f"http://{IP_ADDRESS_FOR_SEND_RESULT}:5000/get_logs", json={
@@ -346,7 +352,7 @@ class HandleJPG:
             })
         return predict
 
-    def main(self):
+    def main(self) -> str:
         """
 
         :return:
