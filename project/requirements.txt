@@ -18,3 +18,4 @@ psutil==5.9.1
 requests==2.31.0
 pdf2image==1.16.3
 python-magic==0.4.27
+fuzzywuzzy==0.18.0

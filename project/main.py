@@ -18,6 +18,7 @@ import scipy.ndimage
 from PIL import Image
 from __init__ import *
 from typing import Union
+from numpy import ndarray
 from fuzzywuzzy import fuzz
 from PyPDF2 import PdfFileReader
 from multiprocessing import Pool
@@ -26,6 +27,7 @@ from collections import namedtuple
 from collections import defaultdict
 from pdf2image import convert_from_path
 from configuration import Configuration
+from typing import List, Optional, Tuple
 from validations_post_processing import ValidationsAndPostProcessing
 
 
@@ -33,42 +35,50 @@ logger: getLogger = get_logger("logging")
 
 
 class HandleMultiPagesPDF:
+    """
+    Класс для работы с многостраничным pdf (разделение страниц на jpg и запуск последующих классов).
+    """
     def __init__(self, file: str, dir_cache: str):
         self.file: str = file
         self.dir_cache: str = dir_cache
 
     def get_count_pages_from_file(self) -> int:
         """
-
+        Получить количество файлов в pdf.
         :param:
         :return:
         """
         with open(self.file, 'rb') as fl:
             page_num: int = PdfFileReader(fl).getNumPages()
             logger.info(f"Количество файлов pdf в многостраничном файле: {page_num}")
+            with contextlib.suppress(Exception):
+                requests.post(f"http://{IP_ADDRESS_FOR_SEND_RESULT}:5000/get_logs", json={
+                    "logs": "Получение количества файлов pdf в многостраничном файле",
+                    "value": page_num
+                })
             return page_num
 
-    def split_file(self):
+    def split_file(self) -> None:
         """
-
+        Разделить многостраничный pdf на множество jpg файлов.
         :return:
         """
-        images = convert_from_path(self.file)
+        images: List[Image] = convert_from_path(self.file)
         for i in range(len(images)):
             images[i].save(f'{self.dir_cache}/{os.path.basename(self.file)}_{str(i)}.jpg', 'JPEG')
 
-    def get_count_split_pages(self):
+    def get_count_split_pages(self) -> None:
         """
-
+        Получить количество разделенных файлов.
         :return:
         """
         path, dirs, files = next(os.walk(self.dir_cache))
         file_count: int = len(files)
         logger.info(f"Количество разбитых файлов pdf в кэше: {file_count}")
 
-    def start_file_processing(self):
+    def start_file_processing(self) -> None:
         """
-
+        Запуск разделенных файлов через мультипроцессинг.
         :return:
         """
         procs: list = []
@@ -80,14 +90,14 @@ class HandleMultiPagesPDF:
                 procs.append(proc)
             [proc.get() for proc in procs]
 
-    def handle_pages(self, file: str, dir_main: str, dir_csv: str, dir_json: str, classification: str):
+    def handle_pages(self, file: str, dir_main: str, dir_csv: str, dir_json: str, classification: str) -> None:
         """
-
-        :param file:
-        :param dir_main:
-        :param dir_csv:
-        :param dir_json:
-        :param classification:
+        Обработка каждой страницы (поворот изображения, классификация).
+        :param file: Разделенный файл jpg.
+        :param dir_main: Основная директория для загрузки файла.
+        :param dir_csv: Директория для сохранения файлов в формате csv.
+        :param dir_json: Директория для сохранения файлов в формате json.
+        :param classification: Тип классификации.
         :return:
         """
         classification_yml: str = f"{os.path.dirname(os.path.dirname(self.file))}/configs"
@@ -102,9 +112,9 @@ class HandleMultiPagesPDF:
             f"{classification_yml}/{classification_name}/{classification_name}.py"
         ).main()
 
-    def main(self):
+    def main(self) -> Optional[str]:
         """
-
+        Основной метод, который запускает код.
         :return:
         """
         mime_type: str = magic.from_file(self.file, mime=True)
@@ -115,95 +125,68 @@ class HandleMultiPagesPDF:
         elif mime_type == "image/jpeg":
             shutil.copy(self.file, f'{self.dir_cache}/{os.path.basename(self.file)}')
         else:
-            logger.error(f"The file format is not supported {os.path.basename(self.file)}")
+            message: str = f"The file format is not supported {os.path.basename(self.file)}"
+            logger.error(message)
+            return message
         self.start_file_processing()
 
 
 class HandleJPG:
-    def __init__(self, input_file, dir_main, classification, configs):
-        self.input_file = input_file
-        self.dir_main = dir_main
-        self.classification = classification
-        self.configs = configs
+    def __init__(self, input_file: str, dir_main: str, classification: str, configs: str):
+        self.input_file: str = input_file
+        self.dir_main: str = dir_main
+        self.classification: str = classification
+        self.configs: str = configs
 
     @staticmethod
-    def rotate(image, angle, background):
+    def rotate(image: ndarray, angle: int, background: Tuple[int, int, int]) -> ndarray:
+        """
+        Поворот изображения на 90, 180 или 270 градусов.
+        :param image: Исходное изображение в виде матрицы.
+        :param angle: Угол, на который нужно повернуть.
+        :param background: Оттенок серого цвета.
+        :return: Матрица перевернутого изображения.
+        """
+        old_width: int
+        old_height: int
         old_width, old_height = image.shape[:2]
-        angle_radian = math.radians(angle)
-        width = abs(np.sin(angle_radian) * old_height) + abs(np.cos(angle_radian) * old_width)
-        height = abs(np.sin(angle_radian) * old_width) + abs(np.cos(angle_radian) * old_height)
-
-        image_center = tuple(np.array(image.shape[1::-1]) / 2)
-        rot_mat = cv2.getRotationMatrix2D(image_center, angle, 1.0)
+        angle_radian: float = math.radians(angle)
+        width: float = abs(np.sin(angle_radian) * old_height) + abs(np.cos(angle_radian) * old_width)
+        height: float = abs(np.sin(angle_radian) * old_width) + abs(np.cos(angle_radian) * old_height)
+        image_center: Tuple[float, float] = tuple(np.array(image.shape[1::-1]) / 2)
+        rot_mat: ndarray = cv2.getRotationMatrix2D(image_center, angle, 1.0)
         rot_mat[1, 2] += (width - old_width) / 2
         rot_mat[0, 2] += (height - old_height) / 2
         return cv2.warpAffine(image, rot_mat, (int(round(height)), int(round(width))), borderValue=background)
 
     def turn_img(self):
+        """
+        Поворот изображения.
+        :return:
+        """
         if not os.path.exists(self.classification):
             os.makedirs(os.path.join(self.classification, "line"))
             os.makedirs(os.path.join(self.classification, "port"))
             os.makedirs(os.path.join(self.classification, "contract"))
             os.makedirs(os.path.join(self.classification, "unknown"))
 
-        im = cv2.imread(str(self.input_file))
-        rotate_img = pytesseract.image_to_osd(im, config='--psm 0 -c min_characters_to_try=5')
-        angle_rotated_image = int(re.search(r'(?<=Orientation in degrees: )\d+', rotate_img)[0])
-        rotated = self.rotate(im, angle_rotated_image, (0, 0, 0))
-        file_name = os.path.basename(self.input_file)
-        cv2.imwrite(f'{os.path.dirname(self.input_file)}/{file_name}', rotated)
-        logger.info(f'Rotate: {angle_rotated_image}, Filename: {os.path.basename(file_name)}')
-        with contextlib.suppress(Exception):
-            requests.post("http://127.0.0.1:5000/get_logs", json={
-                "logs": "Поворот изображений на прямой угол",
-                "value": angle_rotated_image
-            })
+        image: ndarray = cv2.imread(self.input_file)
+        rotate_img: str = pytesseract.image_to_osd(image, config='--psm 0 -c min_characters_to_try=5')
+        angle_rotated_image: int = int(re.search(r'(?<=Orientation in degrees: )\d+', rotate_img)[0])
+        rotated: ndarray = self.rotate(image, angle_rotated_image, (0, 0, 0))
+        self.save_file(angle_rotated_image, rotated, "Поворот изображений на прямой угол")
 
     def correct_skew(self, delta, limit):
-        def determine_score(arr, angle):
-            data = scipy.ndimage.rotate(arr, angle, reshape=False, order=0)
-            histogram = np.sum(data, axis=1, dtype=float)
-            score = np.sum((histogram[1:] - histogram[:-1]) ** 2, dtype=float)
-            return score // 100000000
-
-        def golden_ration(l, r, delta):
-            phi = (1 + math.sqrt(5)) / 2
-            resphi = 2 - phi
-            x1 = l + resphi * (r - l)
-            x2 = r - resphi * (r - l)
-            f1 = determine_score(thresh, x1)
-            f2 = determine_score(thresh, x2)
-            scores = []
-            angles = []
-            while abs(r - l) > delta:
-                if f1 < f2:
-                    l = x1
-                    x1 = x2
-                    f1 = f2
-                    x2 = r - resphi * (r - l)
-                    f2 = determine_score(thresh, x2)
-                    scores.append(f2)
-                    angles.append(x2)
-                else:
-                    r = x2
-                    x2 = x1
-                    f2 = f1
-                    x1 = l + resphi * (r - l)
-                    f1 = determine_score(thresh, x1)
-                    scores.append(f1)
-                    angles.append(x1)
-            return (x1 + x2) / 2
-
-        image = cv2.imread(self.input_file)
+        image: ndarray = cv2.imread(self.input_file)
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
 
         X_Y = namedtuple("X_Y", "x y")
-        dict_angle_and_score = {0: X_Y(0, determine_score(thresh, 0))}
+        dict_angle_and_score = {0: X_Y(0, self._determine_score(thresh, 0))}
         best_angle = 0
         for angle in range(1, limit, delta):
-            dict_angle_and_score[angle] = X_Y(angle, determine_score(thresh, angle))
-            dict_angle_and_score[-angle] = X_Y(-angle, determine_score(thresh, -angle))
+            dict_angle_and_score[angle] = X_Y(angle, self._determine_score(thresh, angle))
+            dict_angle_and_score[-angle] = X_Y(-angle, self._determine_score(thresh, -angle))
             sorted_x_y = sorted(dict_angle_and_score.values(), key=lambda xy: xy.y)
             max_value = sorted_x_y[-1]
             min_value = sorted_x_y[0]
@@ -211,26 +194,103 @@ class HandleJPG:
                 left = dict_angle_and_score.get(max_value.x - 1)
                 right = dict_angle_and_score.get(max_value.x + 1)
                 if left and right:
-                    best_angle = golden_ration(left.x, right.x, 0.1)
-                    best_score = determine_score(thresh, best_angle)
+                    best_angle = self._golden_ratio(left.x, right.x, 0.1, thresh)
+                    best_score = self._determine_score(thresh, best_angle)
                     if best_score > min_value.y * 100:
                         break
                     else:
                         del dict_angle_and_score[max_value.x]
 
-        (h, w) = image.shape[:2]
-        center = (w // 2, h // 2)
-        M = cv2.getRotationMatrix2D(center, best_angle, 1.0)
-        corrected = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
-        logger.info(f'Skew is: {best_angle:.04f}, Filename: {os.path.basename(self.input_file)}')
-        cv2.imwrite(f"{os.path.dirname(self.input_file)}/{os.path.basename(self.input_file)}", corrected)
+        corrected: ndarray = self._rotate_image(image, best_angle)
+        self.save_file(best_angle, corrected, "Выравнивание изображений под маленьким углом")
+
+    def save_file(self, angle: Union[int, float], ndarray_image: ndarray, message_to_send: str):
+        """
+
+        :param angle:
+        :param ndarray_image:
+        :param message_to_send:
+        :return:
+        """
+        file_name: str = os.path.basename(self.input_file)
+        cv2.imwrite(f'{os.path.dirname(self.input_file)}/{file_name}', ndarray_image)
+        logger.info(f'Rotate: {angle}, {message_to_send}, Filename: {file_name}')
+
         with contextlib.suppress(Exception):
-            requests.post("http://127.0.0.1:5000/get_logs", json={
-                "logs": "Выравнивание изображений под маленьким углом",
-                "value": corrected
+            requests.post(f"http://{IP_ADDRESS_FOR_SEND_RESULT}:5000/get_logs", json={
+                "logs": message_to_send,
+                "value": angle
             })
 
+    @staticmethod
+    def _determine_score(arr, angle):
+        """
+
+        :param arr:
+        :param angle:
+        :return:
+        """
+        data = scipy.ndimage.rotate(arr, angle, reshape=False, order=0)
+        histogram = np.sum(data, axis=1, dtype=float)
+        score = np.sum((histogram[1:] - histogram[:-1]) ** 2, dtype=float)
+        return score // 100000000
+
+    def _golden_ratio(self, left, right, delta, thresh):
+        """
+
+        :param left:
+        :param right:
+        :param delta:
+        :param thresh:
+        :return:
+        """
+        res_phi = 2 - (1 + math.sqrt(5)) / 2
+        x1, x2 = left + res_phi * (right - left), right - res_phi * (right - left)
+        f1, f2 = self._determine_score(thresh, x1), self._determine_score(thresh, x2)
+        scores = []
+        angles = []
+        while abs(right - left) > delta:
+            if f1 < f2:
+                left, x1, f1 = x1, x2, f2
+                x2 = right - res_phi * (right - left)
+                f2 = self._determine_score(thresh, x2)
+                scores.append(f2)
+                angles.append(x2)
+            else:
+                right, x2, f2 = x2, x1, f1
+                x1 = left + res_phi * (right - left)
+                f1 = self._determine_score(thresh, x1)
+                scores.append(f1)
+                angles.append(x1)
+        return (x1 + x2) / 2
+
+    @staticmethod
+    def _rotate_image(image, angle):
+        """
+
+        :param image:
+        :param angle:
+        :return:
+        """
+        (h, w) = image.shape[:2]
+        center = (w // 2, h // 2)
+        M = cv2.getRotationMatrix2D(center, angle, 1.0)
+        return cv2.warpAffine(
+            image,
+            M,
+            (w, h),
+            flags=cv2.INTER_CUBIC,
+            borderMode=cv2.BORDER_REPLICATE,
+        )
+
     def move_file_in_dir(self, str_of_doc, file_name, predict=None):
+        """
+
+        :param str_of_doc:
+        :param file_name:
+        :param predict:
+        :return:
+        """
         with open(f"{self.configs}/classification.yml", "r") as stream:
             try:
                 yaml_file = yaml.safe_load(stream)
@@ -265,6 +325,10 @@ class HandleJPG:
         return predict
 
     def classification_img(self):
+        """
+
+        :return:
+        """
         image = Image.open(self.input_file)
         ocr_df = pytesseract.image_to_data(image, output_type='data.frame', lang='rus+eng')
         float_cols = ocr_df.select_dtypes('float').columns
@@ -276,13 +340,17 @@ class HandleJPG:
         predict = self.move_file_in_dir(str_of_doc, self.input_file)
         logger.info(f'Filename: {os.path.basename(self.input_file)}, Predict class: {predict}')
         with contextlib.suppress(Exception):
-            requests.post("http://127.0.0.1:5000/get_logs", json={
+            requests.post(f"http://{IP_ADDRESS_FOR_SEND_RESULT}:5000/get_logs", json={
                 "logs": "Классификация изображений",
                 "value": predict
             })
         return predict
 
     def main(self):
+        """
+
+        :return:
+        """
         self.turn_img()
         self.correct_skew(delta=1, limit=60)
         return self.classification_img()
@@ -552,7 +620,7 @@ class RecognizeTable:
         self.recognize_all_cells(box)
         self.write_to_csv(box)
         list_all_table = self.write_to_json(box)
-        self.push_to_db(list_all_table)
+        # self.push_to_db(list_all_table)
         CSVData().parsed_json_from_db(os.path.basename(self.file), self.output_directory_csv, list_all_table)
 
 
