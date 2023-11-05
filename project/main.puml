@@ -1,0 +1,137 @@
+@startuml
+
+package "handle_multi_pages_PDF" {
+    class HandleMultiPagesPDF {
+        - file
+        - dir_cache
+
+        + __init__()
+        + get_count_pages_from_file():
+        + split_file():
+        + get_count_split_pages():
+        + start_file_processing():
+        + handle_pages():
+        + main():
+    }
+}
+
+package "handle_JPG" {
+    class HandleJPG {
+        - input_file
+        - dir_main
+        - classification
+        - configs
+
+        + __init__()
+        + _determine_score():
+        + _golden_ratio():
+        + rotate():
+        + save_file():
+        + move_file():
+        + read_config_file():
+        + classification_img():
+        + turn_img():
+        + correct_skew():
+        + main(): str
+    }
+}
+
+package "recognize_text_from_JPG" {
+    class RecognizeTable {
+        - label_list
+        - bit_not
+        - length_of_kernel
+        - min_height_of_cell
+        - min_width_of_cell
+        - indent_x_text_of_cells
+        - indent_y_text_of_cells
+        - config_for_pytesseract
+        - database
+        - user
+        - password
+        - host
+        - port
+        - table
+
+        - file
+        - output_directory
+        - output_directory_csv
+        - config_yaml_file
+        - scripts_validations
+
+        + __init__()
+        + add_values_in_dict():
+        + write_to_file():
+        + extracted_text():
+        + find_score_and_text():
+        + parse_labels_from_config_file():
+        + read_config_file():
+        + process_image_and_segment_text():
+        + sort_contours():
+        + add_in_box_all_contours():
+        + find_parent_and_child_in_table():
+        + recognize_all_cells():
+        + write_to_csv():
+        + write_to_json():
+        + main():
+    }
+
+    class Cell {
+        - img
+        - parent
+        - child
+        - x1
+        - y1
+        - x2
+        - y2
+        - bit_not
+        - indent_x_text_of_cells
+        - indent_y_text_of_cells
+        - config_for_pytesseract
+        - text
+        - score
+        - std
+        - validations
+        - row
+        - col
+        - child_max_row
+        - child_max_col
+
+        + __init__():
+        + __gt__():
+        + __str__():
+        + __repr__():
+        + recognize():
+        + get_structure_of_row():
+        + get_structure_of_col():
+        + to_dataframe():
+        + to_json():
+        + recognize_and_get_structure_of_table():
+    }
+}
+
+package "data_extractor" {
+    class DataExtractor {
+        - date
+        - ship
+        - goods_name
+        - tnved
+        - consignee
+        - shipper
+        - containers
+
+        + __init__()
+        + validate_containers():
+        + get_data_from_cell():
+        + parse_json():
+        + get_necessary_data():
+        + get_key_by_value():
+        + write_parsed_data_to_csv():
+    }
+}
+
+handle_multi_pages_PDF --> handle_JPG : <<call 1>>
+handle_JPG --> recognize_text_from_JPG : <<call 2>>
+recognize_text_from_JPG --> data_extractor : <<call 3>>
+
+@enduml
