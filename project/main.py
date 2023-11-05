@@ -130,6 +130,9 @@ class HandleMultiPagesPDF:
 
 
 class HandleJPG:
+    """
+    Класс для обработки jpg (поворот изображения, классификация).
+    """
     def __init__(self, input_file: str, dir_main: str, classification: str, configs: str):
         self.input_file: str = input_file
         self.dir_main: str = dir_main
@@ -342,6 +345,10 @@ class HandleJPG:
 
 
 class RecognizeTable:
+    """
+    Класс для распознавания текста внутри таблицы.
+    """
+
     label_list: list = []
     bit_not: Optional[ndarray] = None
 
@@ -623,6 +630,9 @@ class RecognizeTable:
 
 
 class Cell:
+    """
+    Класс для распознавания текста внутри каждой ячейки.
+    """
     def __init__(self, img: ndarray, x1, y1, width, height, bit_not: ndarray, indent_x_text_of_cells: int,
                  indent_y_text_of_cells: int, config_for_pytesseract: str):
         self.img: ndarray = img
@@ -776,7 +786,9 @@ class Cell:
 
 
 class DataExtractor:
-
+    """
+    Класс для извлечения нужных данных из полного перечня распознанного текста.
+    """
     def __init__(self):
         self.date: Optional[str] = None
         self.ship: Optional[str] = None
