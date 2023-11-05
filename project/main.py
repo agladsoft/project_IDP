@@ -656,9 +656,9 @@ class Cell:
 
     def recognize(self, lang: str) -> str:
         """
-
-        :param lang:
-        :return:
+        Распознаем текст внутри ячейки.
+        :param lang: Язык для распознавания.
+        :return: Распознанный текст.
         """
         if self.child:
             bit_not2 = self.bit_not.copy()
@@ -687,7 +687,7 @@ class Cell:
 
     def get_structure_of_row(self) -> None:
         """
-
+        Получить структуру строк.
         :return:
         """
         if not self.child:
@@ -711,7 +711,7 @@ class Cell:
 
     def get_structure_of_col(self) -> None:
         """
-
+        Получить структуру колонок.
         :return:
         """
         if not self.child:
@@ -735,7 +735,7 @@ class Cell:
 
     def to_dataframe(self) -> Optional[pd.DataFrame]:
         """
-
+        Сохраняем в таблицу типа DataFrame.
         :return:
         """
         if not self.child or (self.child_max_col == 1 and self.child_max_row == 1):
@@ -747,8 +747,8 @@ class Cell:
 
     def to_json(self) -> Union[list, dict]:
         """
-
-        :return:
+        Сохраняем данные в json.
+        :return: Данные в виде json.
         """
         predicted_boxes: dict = {
             "type": "text",
@@ -764,7 +764,7 @@ class Cell:
 
     def recognize_and_get_structure_of_table(self):
         """
-
+        Распознаем структуру и текст ячеек.
         :return:
         """
         inner: str = self.recognize(lang="rus+eng")
@@ -788,8 +788,8 @@ class DataExtractor:
 
     def validate_containers(self, dict_containers: dict) -> None:
         """
-
-        :param dict_containers:
+        Проверяем валидацию контейнеров.
+        :param dict_containers: Словарь для сохранения контейнеров.
         :return:
         """
         for container in self.containers:
@@ -802,9 +802,9 @@ class DataExtractor:
 
     def get_data_from_cell(self, cell: Union[dict, list], dict_table: dict) -> None:
         """
-
-        :param cell:
-        :param dict_table:
+        Получаем данные из ячеек.
+        :param cell: Ячейка.
+        :param dict_table: Словарь для сохранения данных из ячеек.
         :return:
         """
         if isinstance(cell, dict):
@@ -822,10 +822,10 @@ class DataExtractor:
 
     def parse_json(self, file: str, directory: str, mobile_records: list) -> None:
         """
-
-        :param file:
-        :param directory:
-        :param mobile_records:
+        Парсим полные данные из json.
+        :param file: Наименование файла.
+        :param directory: Наименование директории.
+        :param mobile_records: Полные данные в json.
         :return:
         """
         dict_containers: defaultdict = defaultdict(list)
@@ -839,16 +839,17 @@ class DataExtractor:
                     dict_table: dict = {}
                     for cell in data.get("cells", []):
                         self.get_data_from_cell(cell, dict_table)
-                    self.get_specific_data_from_json(dict_table, index == 2)
+                    self.get_necessary_data(dict_table, index == 2)
                 index += 1
         self.validate_containers(dict_containers)
         self.write_parsed_data_to_csv(file, directory, dict_containers)
 
-    def get_specific_data_from_json(self, dict_table: dict, is_normal_table: bool) -> None:
+    def get_necessary_data(self, dict_table: dict, is_normal_table: bool) -> None:
         """
-
-        :param dict_table:
-        :param is_normal_table:
+        Получаем нужные данные, которые будут сохраняться в таблицу.
+        :param dict_table: Словарь для извлечения данных.
+        :param is_normal_table: Проверяем, нормальная ли структура таблицы.
+        Есть таблица, у которой строки идут не снизу, а справа.
         :return:
         """
         if dict_table:
@@ -862,11 +863,12 @@ class DataExtractor:
     def get_key_by_value(value_of_column: Optional[str], dict_table: dict, value_to_find: str, is_normal_table: bool) \
             -> Optional[str]:
         """
-
-        :param value_of_column:
-        :param dict_table:
-        :param value_to_find:
-        :param is_normal_table:
+        Получаем нужную колонку и его значение по примерному совпадению (fuzz).
+        :param value_of_column: Значение, которое сохраняется в таблицу.
+        :param dict_table: Словарь для извлечения данных.
+        :param value_to_find: Какую колонку должны найти в тексте.
+        :param is_normal_table: Проверяем, нормальная ли структура таблицы.
+        Есть таблица, у которой строки идут не снизу, а справа.
         :return:
         """
         for key, value in dict_table.items():
@@ -877,10 +879,10 @@ class DataExtractor:
 
     def write_parsed_data_to_csv(self, file: str, directory: str, dict_containers: dict) -> None:
         """
-
-        :param file:
-        :param directory:
-        :param dict_containers:
+        Сохраняем отпарсенные данные в csv.
+        :param file: Наименование файла.
+        :param directory: Наименование директории.
+        :param dict_containers: Данные с контейнерами.
         :return:
         """
         load_data: str = f"{directory}/csv_parsed"
