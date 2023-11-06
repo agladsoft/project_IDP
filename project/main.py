@@ -307,7 +307,7 @@ class HandleJPG:
                         predict = self.move_file(file_name, yaml_file, label_in_config)
                 if not predict:
                     logger.info(f'Filename: {os.path.basename(self.input_file)}, text: {str_of_doc}')
-                    predict = self.move_file(file_name, yaml_file, "folder")
+                    predict = self.move_file(file_name, yaml_file, "unknown")
             except yaml.YAMLError as exc:
                 print("Exception", exc)
         return predict
