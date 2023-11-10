@@ -3,6 +3,7 @@ numpy==1.23.1
 opencv-python==4.8.1.78
 packaging==21.3
 pandas==1.4.3
+easyocr==1.7.1
 Pillow==10.1.0
 psycopg2-binary==2.9.3
 pyparsing==3.0.9

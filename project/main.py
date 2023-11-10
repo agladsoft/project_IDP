@@ -7,6 +7,7 @@ import yaml
 import math
 import magic
 import shutil
+import easyocr
 import requests
 import warnings
 import contextlib
@@ -491,7 +492,31 @@ class RecognizeTable:
             except yaml.YAMLError as exc:
                 print(exc)
 
-    def process_image_and_segment_text(self) -> Optional[Tuple[ndarray, Tuple[ndarray]]]:
+    def process_image_and_lines(self, img: ndarray) -> ndarray:
+        """
+        Выполнение предобработки изображения и выделение линий.
+        :param img: Исходное изображение в виде матрицы.
+        :return: Изображение с выделенными линиями.
+        """
+        thresh, img_bin = cv2.threshold(img, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+        img_bin = 255 - img_bin
+        kernel_len = np.array(img).shape[1] // self.length_of_kernel
+        ver_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, kernel_len))
+        hor_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_len, 1))
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+        image_1 = cv2.erode(img_bin, ver_kernel, iterations=3)
+        vertical_lines = cv2.dilate(image_1, ver_kernel, iterations=3)
+        image_2 = cv2.erode(img_bin, hor_kernel, iterations=3)
+        horizontal_lines = cv2.dilate(image_2, hor_kernel, iterations=3)
+        img_vh = cv2.addWeighted(vertical_lines, 0.5, horizontal_lines, 0.5, 0.0)
+        img_vh = cv2.erode(~img_vh, kernel, iterations=2)
+        thresh, img_vh = cv2.threshold(img_vh, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+        bitxor = cv2.bitwise_xor(img, img_vh)
+        self.bit_not = cv2.bitwise_not(bitxor)
+        cv2.imwrite("x.jpg", self.bit_not)
+        return img_vh
+
+    def pre_process_image_good_structure(self) -> Optional[Tuple[ndarray, Tuple[ndarray]]]:
         """
         Выполнение различных операций с изображением и сегментация текста.
         :return: Изображение в виде матрицы.
@@ -500,21 +525,7 @@ class RecognizeTable:
         if "unknown.yml" in self.config_yaml_file.split("/")[-1]:
             return self.extracted_text()
         self.read_config_file(pytesseract.image_to_data(img, output_type='dict', lang='rus+eng'))
-        thresh, img_bin = cv2.threshold(img, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-        img_bin: ndarray = 255 - img_bin
-        kernel_len: int = np.array(img).shape[1] // self.length_of_kernel
-        ver_kernel: ndarray = cv2.getStructuringElement(cv2.MORPH_RECT, (1, kernel_len))
-        hor_kernel: ndarray = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_len, 1))
-        kernel: ndarray = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-        image_1: ndarray = cv2.erode(img_bin, ver_kernel, iterations=3)
-        vertical_lines: ndarray = cv2.dilate(image_1, ver_kernel, iterations=3)
-        image_2: ndarray = cv2.erode(img_bin, hor_kernel, iterations=3)
-        horizontal_lines: ndarray = cv2.dilate(image_2, hor_kernel, iterations=3)
-        img_vh: ndarray = cv2.addWeighted(vertical_lines, 0.5, horizontal_lines, 0.5, 0.0)
-        img_vh = cv2.erode(~img_vh, kernel, iterations=2)
-        thresh, img_vh = cv2.threshold(img_vh, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-        bitxor: ndarray = cv2.bitwise_xor(img, img_vh)
-        self.bit_not = cv2.bitwise_not(bitxor)
+        img_vh = self.process_image_and_lines(img)
         contours, hierarchy = cv2.findContours(img_vh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         contours, boundingBoxes = self.sort_contours(contours, method="top-to-bottom")
         return img, contours
@@ -536,12 +547,34 @@ class RecognizeTable:
         contours, boundingBoxes = zip(*sorted(zip(contours, boundingBoxes), key=lambda b: b[1][i], reverse=reverse))
         return contours, boundingBoxes
 
-    def add_in_box_all_contours(self, img: ndarray, contours: Tuple[ndarray]) -> Tuple[list, list]:
+    def pre_process_image_bad_structure(self) -> Optional[Tuple[ndarray, list]]:
         """
-        Добавляем контуры в список.
-        :param img: Изображение в виде матрицы.
-        :param contours: Контуры.
-        :return: Список контуров.
+        Выполнение различных операций с изображением и сегментация текста с нечеткой структурой таблицы.
+        :return:
+        """
+        img: ndarray = cv2.imread(self.file, 0)
+        reader: easyocr.Reader = easyocr.Reader(['ru', 'en'])
+        text_data: list = reader.readtext(img, paragraph=True, x_ths=0.5)
+        alL_contours: list = []
+        for data in text_data:
+            box, text = data
+            top_left, top_right, bottom_right, bottom_left = box
+            list_top_left: list = [int(x) - 8 if i == 0 else int(x) for i, x in enumerate(top_left)]
+            list_bottom_right: list = [int(x) + 8 if i == 0 else int(x) for i, x in enumerate(bottom_right)]
+            list_width_height: list = [w - h for w, h in zip(bottom_right, top_left)]
+            alL_contours.append(list_top_left + list_width_height)
+            cv2.rectangle(img, list_top_left, list_bottom_right, (0, 0, 0), 2)
+        cv2.imwrite("x.jpg", img)
+        self.read_config_file(pytesseract.image_to_data(img, output_type='dict', lang='rus+eng'))
+        self.process_image_and_lines(img)
+        return img, alL_contours
+
+    def get_all_contours(self, img: ndarray, contours: Tuple[ndarray]) -> Tuple[ndarray, list]:
+        """
+
+        :param img:
+        :param contours:
+        :return:
         """
         all_contours: list = []
         image: ndarray = img
@@ -550,7 +583,16 @@ class RecognizeTable:
             if (w != img.shape[1] and h != img.shape[0]) and h > self.min_height_of_cell and w > self.min_width_of_cell:
                 all_contours.append([x, y, w, h])
                 image = cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
-        box: list = [Cell(img, *contour, self.bit_not, self.indent_x_text_of_cells, self.indent_y_text_of_cells,
+        return image, all_contours
+
+    def add_in_box_all_contours(self, image: ndarray, all_contours: Tuple[ndarray]) -> Tuple[list, list]:
+        """
+        Добавляем контуры в список.
+        :param image: Изображение в виде матрицы.
+        :param all_contours: Контуры.
+        :return: Список контуров.
+        """
+        box: list = [Cell(image, *contour, self.bit_not, self.indent_x_text_of_cells, self.indent_y_text_of_cells,
                      self.config_for_pytesseract) for contour in all_contours]
         path: str = f"{os.path.dirname(self.output_directory_csv)}/img_structure"
         os.makedirs(path, exist_ok=True)
@@ -615,17 +657,21 @@ class RecognizeTable:
             json.dump(list_all_table, f, ensure_ascii=False, indent=4, cls=CustomJSON)
         return list_all_table
 
-    def main(self):
+    def main(self, is_good_structure: bool = False):
         """
         Основной метод, который запускает код.
         :return:
         """
         try:
-            img, contours = self.process_image_and_segment_text()
+            if is_good_structure:
+                img, contours = self.pre_process_image_good_structure()
+                image, all_contours = self.get_all_contours(img, contours)
+            else:
+                image, all_contours = self.pre_process_image_bad_structure()
         except Exception as ex:
             logger.error(f"Exception is {ex}")
             return
-        box, list_combinations = self.add_in_box_all_contours(img, contours)
+        box, list_combinations = self.add_in_box_all_contours(image, all_contours)
         self.find_parent_and_child_in_table(list_combinations)
         self.recognize_all_cells(box)
         self.write_to_csv(box)
