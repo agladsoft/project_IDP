@@ -21,10 +21,9 @@ from fuzzywuzzy import fuzz
 from PyPDF2 import PdfFileReader
 from multiprocessing import Pool
 from itertools import combinations
-from collections import namedtuple
-from collections import defaultdict
 from pdf2image import convert_from_path
 from configuration import Configuration
+from collections import namedtuple, defaultdict
 from validations_post_processing import DataValidator
 from typing import List, Optional, Tuple, Union, Sequence
 
@@ -553,7 +552,9 @@ class RecognizeTable:
                 image = cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
         box: list = [Cell(img, *contour, self.bit_not, self.indent_x_text_of_cells, self.indent_y_text_of_cells,
                      self.config_for_pytesseract) for contour in all_contours]
-        cv2.imwrite(self.output_directory_csv + "/" + os.path.basename(f"{self.file}"), image)
+        path: str = f"{os.path.dirname(self.output_directory_csv)}/img_structure"
+        os.makedirs(path, exist_ok=True)
+        cv2.imwrite(f"{path}/{os.path.basename(self.file)}", image)
         return box, list(combinations(box, 2))
 
     @staticmethod
