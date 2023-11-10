@@ -25,8 +25,8 @@ from collections import namedtuple
 from collections import defaultdict
 from pdf2image import convert_from_path
 from configuration import Configuration
-from typing import List, Optional, Tuple, Union
 from validations_post_processing import DataValidator
+from typing import List, Optional, Tuple, Union, Sequence
 
 
 logger: getLogger = get_logger("logging")
@@ -189,7 +189,7 @@ class HandleJPG:
         """
         image: ndarray = cv2.imread(self.input_file)
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
+        thresh: Union[ndarray, cv2.UMat] = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
 
         X_Y: namedtuple = namedtuple("X_Y", "x y")
         dict_angle_and_score: dict = {0: X_Y(0, self._determine_score(thresh, 0))}
@@ -231,7 +231,7 @@ class HandleJPG:
             })
 
     @staticmethod
-    def _determine_score(arr: ndarray, angle: Union[int, float]) -> float:
+    def _determine_score(arr: Union[ndarray, cv2.UMat], angle: Union[int, float]) -> float:
         """
         Определяем наилучший результат для угла.
         :param arr: Изображение в виде матрицы.
@@ -243,7 +243,7 @@ class HandleJPG:
         score: np.array_api.float64 = np.sum((histogram[1:] - histogram[:-1]) ** 2, dtype=float)
         return score // 100000000
 
-    def _golden_ratio(self, left: int, right: int, delta: float, thresh: ndarray) -> Union[int, float]:
+    def _golden_ratio(self, left: int, right: int, delta: float, thresh: Union[ndarray, cv2.UMat]) -> Union[int, float]:
         """
         Определяем лучший угол для поворота (по золотому сечению). Вот ссылка для ознакомления
         https://en.wikipedia.org/wiki/Golden_ratio
@@ -521,7 +521,10 @@ class RecognizeTable:
         return img, contours
 
     @staticmethod
-    def sort_contours(contours: Tuple[ndarray], method="left-to-right") -> Tuple[Tuple[ndarray], list]:
+    def sort_contours(
+            contours: Sequence[Union[cv2.Mat, ndarray]],
+            method="left-to-right"
+    ) -> Tuple[Tuple[ndarray], list]:
         """
         Сортируем контуры.
         :param contours: Контуры.
@@ -626,7 +629,11 @@ class RecognizeTable:
         self.recognize_all_cells(box)
         self.write_to_csv(box)
         list_all_table: list = self.write_to_json(box)
-        DataExtractor().parse_json(os.path.basename(self.file), self.output_directory_csv, list_all_table)
+        DataExtractor().parse_json(
+            os.path.basename(self.file),
+            os.path.dirname(self.output_directory_csv),
+            list_all_table
+        )
 
 
 class Cell:

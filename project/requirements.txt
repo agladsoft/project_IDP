@@ -1,13 +1,13 @@
 JSON-log-formatter==0.5.1
 numpy==1.23.1
-opencv-python==4.5.5.62
+opencv-python==4.8.1.78
 packaging==21.3
 pandas==1.4.3
-Pillow==9.2.0
+Pillow==10.1.0
 psycopg2-binary==2.9.3
 pyparsing==3.0.9
 PyPDF2==2.8.1
-pytesseract==0.3.9
+pytesseract==0.3.10
 python-dateutil==2.8.2
 pytz==2022.1
 PyYAML==6.0
