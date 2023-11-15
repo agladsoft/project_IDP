@@ -412,8 +412,9 @@ class RecognizeTable:
         if not os.path.exists(dir_txt):
             os.makedirs(dir_txt)
         noiseless_image_colored = cv2.fastNlMeansDenoisingColored(img, None, 20, 20, 7, 21)
+        cv2.imwrite("x.jpg", noiseless_image_colored)
         data: dict = pytesseract.image_to_string(noiseless_image_colored, output_type="dict", lang='rus+eng')
-        return self.write_to_file(dir_txt, data["text"])
+        self.write_to_file(dir_txt, data["text"])
 
     @staticmethod
     def find_score_and_text(data: dict, labels: bool) -> Tuple[dict, str, list]:
@@ -513,7 +514,6 @@ class RecognizeTable:
         thresh, img_vh = cv2.threshold(img_vh, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
         bitxor = cv2.bitwise_xor(img, img_vh)
         self.bit_not = cv2.bitwise_not(bitxor)
-        cv2.imwrite("x.jpg", self.bit_not)
         return img_vh
 
     def pre_process_image_good_structure(self) -> Optional[Tuple[ndarray, Tuple[ndarray]]]:
@@ -522,8 +522,6 @@ class RecognizeTable:
         :return: Изображение в виде матрицы.
         """
         img: ndarray = cv2.imread(self.file, 0)
-        if "unknown.yml" in self.config_yaml_file.split("/")[-1]:
-            return self.extracted_text()
         self.read_config_file(pytesseract.image_to_data(img, output_type='dict', lang='rus+eng'))
         img_vh = self.process_image_and_lines(img)
         contours, hierarchy = cv2.findContours(img_vh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -564,7 +562,6 @@ class RecognizeTable:
             list_width_height: list = [w - h for w, h in zip(bottom_right, top_left)]
             alL_contours.append(list_top_left + list_width_height)
             cv2.rectangle(img, list_top_left, list_bottom_right, (0, 0, 0), 2)
-        cv2.imwrite("x.jpg", img)
         self.read_config_file(pytesseract.image_to_data(img, output_type='dict', lang='rus+eng'))
         self.process_image_and_lines(img)
         return img, alL_contours
@@ -657,13 +654,15 @@ class RecognizeTable:
             json.dump(list_all_table, f, ensure_ascii=False, indent=4, cls=CustomJSON)
         return list_all_table
 
-    def main(self, is_good_structure: bool = False):
+    def main(self, is_good_structure: bool = False) -> None:
         """
         Основной метод, который запускает код.
         :return:
         """
         try:
-            if is_good_structure:
+            if "unknown.yml" in self.config_yaml_file.split("/")[-1]:
+                return self.extracted_text()
+            elif is_good_structure:
                 img, contours = self.pre_process_image_good_structure()
                 image, all_contours = self.get_all_contours(img, contours)
             else:
