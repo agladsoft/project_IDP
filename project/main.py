@@ -28,14 +28,16 @@ from configuration import Configuration
 from typing import List, Optional, Tuple, Union
 from validations_post_processing import DataValidator
 
-
 logger: getLogger = get_logger("logging")
 
+
+# TODO создать директории с csv или вынести создание всей структуры отдельно
 
 class HandleMultiPagesPDF:
     """
     Класс для работы с многостраничным pdf (разделение страниц на jpg и запуск последующих классов).
     """
+
     def __init__(self, file: str, dir_cache: str):
         self.file: str = file
         self.dir_cache: str = dir_cache
@@ -133,6 +135,7 @@ class HandleJPG:
     """
     Класс для обработки jpg (поворот изображения, классификация).
     """
+
     def __init__(self, input_file: str, dir_main: str, classification: str, configs: str):
         self.input_file: str = input_file
         self.dir_main: str = dir_main
@@ -169,10 +172,10 @@ class HandleJPG:
         :return:
         """
         if not os.path.exists(self.classification):
-            os.makedirs(os.path.join(self.classification, "line"))
-            os.makedirs(os.path.join(self.classification, "port"))
-            os.makedirs(os.path.join(self.classification, "contract"))
-            os.makedirs(os.path.join(self.classification, "unknown"))
+            os.makedirs(os.path.join(self.classification, "line"), exist_ok=True)
+            os.makedirs(os.path.join(self.classification, "port"), exist_ok=True)
+            os.makedirs(os.path.join(self.classification, "contract"), exist_ok=True)
+            os.makedirs(os.path.join(self.classification, "unknown"), exist_ok=True)
 
         image: ndarray = cv2.imread(self.input_file)
         rotate_img: str = pytesseract.image_to_osd(image, config='--psm 0 -c min_characters_to_try=5')
@@ -549,7 +552,7 @@ class RecognizeTable:
                 all_contours.append([x, y, w, h])
                 image = cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
         box: list = [Cell(img, *contour, self.bit_not, self.indent_x_text_of_cells, self.indent_y_text_of_cells,
-                     self.config_for_pytesseract) for contour in all_contours]
+                          self.config_for_pytesseract) for contour in all_contours]
         cv2.imwrite(self.output_directory_csv + "/" + os.path.basename(f"{self.file}"), image)
         return box, list(combinations(box, 2))
 
@@ -633,6 +636,7 @@ class Cell:
     """
     Класс для распознавания текста внутри каждой ячейки.
     """
+
     def __init__(self, img: ndarray, x1, y1, width, height, bit_not: ndarray, indent_x_text_of_cells: int,
                  indent_y_text_of_cells: int, config_for_pytesseract: str):
         self.img: ndarray = img
@@ -678,7 +682,7 @@ class Cell:
         else:
             bit_not2: ndarray = self.bit_not
         final_img: ndarray = bit_not2[self.y1 + self.indent_x_text_of_cells: self.y2 - self.indent_x_text_of_cells,
-                                      self.x1 + self.indent_y_text_of_cells: self.x2 - self.indent_y_text_of_cells]
+                             self.x1 + self.indent_y_text_of_cells: self.x2 - self.indent_y_text_of_cells]
 
         kernel: ndarray = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 1))
         resizing: ndarray = cv2.resize(final_img, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
@@ -789,6 +793,7 @@ class DataExtractor:
     """
     Класс для извлечения нужных данных из полного перечня распознанного текста.
     """
+
     def __init__(self):
         self.date: Optional[str] = None
         self.ship: Optional[str] = None
@@ -900,15 +905,15 @@ class DataExtractor:
         load_data: str = f"{directory}/csv_parsed"
         if not os.path.exists(load_data):
             os.makedirs(load_data)
-        with open(f"{load_data}/{file}_parsed.csv", "w") as f:
-            writer: csv.DictWriter = csv.DictWriter(f, fieldnames=['date', 'ship', 'goods_name', 'container_number',
-                                                                   'tnved', 'is_valid', 'consignee', 'shipper'])
-            writer.writeheader()
+        with open(f"{load_data}/{file}_parsed.json", "a") as f:
+            all_data = []
             for container, is_valid in dict_containers.items():
                 for validation in is_valid:
-                    writer.writerow(dict(date=self.date, ship=self.ship, goods_name=self.goods_name, tnved=self.tnved,
-                                         container_number=container, is_valid=validation, consignee=self.consignee,
-                                         shipper=self.shipper))
+                    data = dict(date=self.date, ship=self.ship, goods_name=self.goods_name, tnved=self.tnved,
+                                container_number=container, is_valid=validation, consignee=self.consignee,
+                                shipper=self.shipper)
+                    all_data.append(data)
+            json.dump(all_data, f, ensure_ascii=False, indent=4)
 
 
 if __name__ == "__main__":
