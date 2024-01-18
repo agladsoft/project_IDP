@@ -4,4 +4,5 @@ project/logging
 project/__pycache__
 directory_files/configs/line/__pycache__
 directory_files/configs/port/__pycache__
+.env
 
