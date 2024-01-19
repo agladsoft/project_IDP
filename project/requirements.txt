@@ -44,7 +44,6 @@ scipy==1.8.1
 shapely==2.0.2
 six==1.16.0
 sympy==1.12
-tifffile==2023.12.9
 torch==2.1.2
 torchvision==0.16.2
 triton==2.1.0
