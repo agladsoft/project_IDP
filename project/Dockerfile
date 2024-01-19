@@ -1,4 +1,10 @@
 FROM ubuntu:20.04
+ARG PATH_IDP_DOCKER_SCRIPTS
+
+ENV PATH_IDP_DOCKER_SCRIPTS=${PATH_IDP_DOCKER_SCRIPTS}
+
+ADD . $PATH_IDP_DOCKER_SCRIPTS
+WORKDIR $PATH_IDP_DOCKER_SCRIPTS
 
 RUN ln -sf /usr/share/zoneinfo/Europe/Moscow /etc/localtime && \
     apt-get update && \
@@ -7,8 +13,7 @@ RUN ln -sf /usr/share/zoneinfo/Europe/Moscow /etc/localtime && \
     tar -xf poppler-21.03.0.tar.xz && cd poppler-21.03.0 && mkdir build && cd build && cmake .. && make && make install && cd ../.. && \
     ldconfig
 
-ADD ./ /mnt
-WORKDIR /mnt
+
 RUN pip install -r requirements.txt
 
 CMD tail -f /dev/null
