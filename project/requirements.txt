@@ -40,7 +40,6 @@ python-magic==0.4.27
 pytz==2022.1
 PyYAML==6.0
 requests==2.31.0
-scikit-image==0.22.0
 scipy==1.8.1
 shapely==2.0.2
 six==1.16.0
