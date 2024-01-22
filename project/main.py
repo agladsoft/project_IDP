@@ -7,6 +7,7 @@ import yaml
 import math
 import magic
 import shutil
+import datetime
 import requests
 import warnings
 import contextlib
@@ -895,6 +896,15 @@ class DataExtractor:
                 return dict_table[key]
         return value_of_column
 
+    @staticmethod
+    def get_ship_name(file_name: str) -> Optional[str]:
+        # TODO настроить унификацию полей по ship_name
+        return 'Stonfish', 'STONFISH'
+
+    def get_line_name(self):
+        # TODO
+        return 'line'
+
     def write_parsed_data_to_csv(self, file: str, directory: str, dict_containers: dict) -> None:
         """
         Сохраняем отпарсенные данные в csv.
@@ -903,6 +913,18 @@ class DataExtractor:
         :param dict_containers: Данные с контейнерами.
         :return:
         """
+        ship_name: str
+        ship_name_unified: str | None
+        ship_name, ship_name_unified = self.get_ship_name(file_name=file)
+        original_file_name: str = os.path.basename(file).replace('.jpg', '.pdf')
+        original_file_parsed_on: str = str(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        date_previous: Union[Match[str], None] = re.match(r'\d{2,4}.\d{1,2}', os.path.basename(file))
+        date_previous: str = f'{date_previous.group()}.01' if date_previous else date_previous
+        if not date_previous:
+            parsed_on = '1976-01-01'
+        else:
+            parsed_on: str = str(datetime.datetime.strptime(date_previous, "%Y.%m.%d").date())
+        line: str = self.get_line_name()
         load_data: str = f"{directory}/csv_parsed"
         if not os.path.exists(load_data):
             os.makedirs(load_data)
@@ -910,9 +932,12 @@ class DataExtractor:
             all_data = []
             for container, is_valid in dict_containers.items():
                 for validation in is_valid:
-                    data = dict(date=self.date, ship=self.ship, goods_name=self.goods_name, tnved=self.tnved,
-                                container_number=container, is_valid=validation, consignee=self.consignee,
-                                shipper=self.shipper)
+                    data = dict(parsed_on=parsed_on, date_repord=self.date, ship_name=ship_name,
+                                ship_name_unified=ship_name_unified,
+                                goods_name=self.goods_name, tnved=self.tnved,
+                                container_number=container, is_valid=validation, consignee_name=self.consignee,
+                                shipper_name=self.shipper, original_file_name=original_file_name,
+                                original_file_parsed_on=original_file_parsed_on)
                     all_data.append(data)
             json.dump(all_data, f, ensure_ascii=False, indent=4)
 
