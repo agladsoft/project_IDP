@@ -5,6 +5,7 @@ import csv
 import glob
 import yaml
 import math
+import httpx
 import magic
 import shutil
 import datetime
@@ -16,6 +17,9 @@ import pandas as pd
 import scipy.ndimage
 from re import Match
 from PIL import Image
+from clickhouse_connect.driverc.dataconv import Sequence
+from pandas import DataFrame
+
 from __init__ import *
 from numpy import ndarray
 from fuzzywuzzy import fuzz
@@ -26,8 +30,11 @@ from collections import namedtuple
 from collections import defaultdict
 from pdf2image import convert_from_path
 from configuration import Configuration
-from typing import List, Optional, Tuple, Union
+from clickhouse_connect import get_client
+from clickhouse_connect.driver import Client
+from typing import List, Optional, Tuple, Union, Any
 from validations_post_processing import DataValidator
+from clickhouse_connect.driver.query import QueryResult
 
 logger: getLogger = get_logger("logging")
 
@@ -804,6 +811,7 @@ class DataExtractor:
         self.consignee: Optional[str] = None
         self.shipper: Optional[str] = None
         self.containers: List[str] = []
+        self.db = DataBase()
 
     def validate_containers(self, dict_containers: dict) -> None:
         """
@@ -896,14 +904,33 @@ class DataExtractor:
                 return dict_table[key]
         return value_of_column
 
-    @staticmethod
-    def get_ship_name(file_name: str) -> Optional[str]:
-        # TODO настроить унификацию полей по ship_name
-        return 'Stonfish', 'STONFISH'
+    def get_ship_name(self, file_name: str) -> Tuple[str, Any]:
+        """Получение информации из базы в таблице reference_ship"""
+        reference_ship: DataFrame = self.db.reference_ship
+        ship_name: str = file_name.split()[2]
+        try:
+            index_ship_name: int | None = reference_ship['ship_name'].to_list().index(ship_name.upper())
+            return ship_name, reference_ship.iloc[index_ship_name].get("ship_name_unified")
+        except ValueError:
+            return ship_name, None
 
     def get_line_name(self):
-        # TODO
         return 'line'
+
+    def get_information_from_file_name(self, file_name: str) -> Tuple:
+        ship_name: str
+        ship_name_unified: str | None
+        ship_name, ship_name_unified = self.get_ship_name(file_name=file_name)
+        original_file_name: str = os.path.basename(file_name).replace('.jpg', '.pdf')
+        original_file_parsed_on: str = str(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        date_previous: Union[Match[str], None] = re.match(r'\d{2,4}.\d{1,2}', os.path.basename(file_name))
+        date_previous: str = f'{date_previous.group()}.01' if date_previous else date_previous
+        if not date_previous:
+            parsed_on = '1976-01-01'
+        else:
+            parsed_on: str = str(datetime.datetime.strptime(date_previous, "%Y.%m.%d").date())
+        line: str = self.get_line_name()
+        return parsed_on, ship_name, ship_name_unified, original_file_name, original_file_parsed_on
 
     def write_parsed_data_to_csv(self, file: str, directory: str, dict_containers: dict) -> None:
         """
@@ -913,18 +940,8 @@ class DataExtractor:
         :param dict_containers: Данные с контейнерами.
         :return:
         """
-        ship_name: str
-        ship_name_unified: str | None
-        ship_name, ship_name_unified = self.get_ship_name(file_name=file)
-        original_file_name: str = os.path.basename(file).replace('.jpg', '.pdf')
-        original_file_parsed_on: str = str(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-        date_previous: Union[Match[str], None] = re.match(r'\d{2,4}.\d{1,2}', os.path.basename(file))
-        date_previous: str = f'{date_previous.group()}.01' if date_previous else date_previous
-        if not date_previous:
-            parsed_on = '1976-01-01'
-        else:
-            parsed_on: str = str(datetime.datetime.strptime(date_previous, "%Y.%m.%d").date())
-        line: str = self.get_line_name()
+        parsed_on, ship_name, ship_name_unified, original_file_name, original_file_parsed_on \
+            = self.get_information_from_file_name(file_name=file)
         load_data: str = f"{directory}/csv_parsed"
         if not os.path.exists(load_data):
             os.makedirs(load_data)
@@ -940,6 +957,31 @@ class DataExtractor:
                                 original_file_parsed_on=original_file_parsed_on)
                     all_data.append(data)
             json.dump(all_data, f, ensure_ascii=False, indent=4)
+
+
+class DataBase:
+
+    def __init__(self):
+        self.client = self.connect_db()
+        self.reference_ship = self.get_ship_name_unifed_db()
+
+    @staticmethod
+    def connect_db() -> Optional[Client]:
+        try:
+            logger.info('Подключение к базе данных')
+            client: Client = get_client(host='10.23.4.196', database='default',
+                                        username='admin', password='6QVnYsC4iSzz')
+        except httpx.ConnectError as ex_connect:
+            logger.info(f'Wrong connection {ex_connect}')
+            return
+        return client
+
+    def get_ship_name_unifed_db(self):
+        ref_ship: QueryResult = self.client.query("SELECT * FROM reference_ship")
+        data: Sequence = ref_ship.result_rows
+        column_names: Sequence = ref_ship.column_names
+        df: DataFrame = pd.DataFrame(data, columns=column_names)
+        return df
 
 
 if __name__ == "__main__":
