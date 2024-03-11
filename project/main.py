@@ -552,21 +552,12 @@ class RecognizeTable:
         """
         img: ndarray = cv2.imread(self.file, 0)
         reader: easyocr.Reader = easyocr.Reader(['ru', 'en'])
-        text_data: list = reader.readtext(img, paragraph=True, x_ths=0.5)
-        alL_contours: list = []
-        for data in text_data:
-            box, text = data
-            top_left, top_right, bottom_right, bottom_left = box
-            list_top_left: list = [int(x) - 8 if i == 0 else int(x) for i, x in enumerate(top_left)]
-            list_bottom_right: list = [int(x) + 8 if i == 0 else int(x) for i, x in enumerate(bottom_right)]
-            list_width_height: list = [w - h for w, h in zip(bottom_right, top_left)]
-            alL_contours.append(list_top_left + list_width_height)
-            cv2.rectangle(img, list_top_left, list_bottom_right, (0, 0, 0), 2)
+        contours: list = reader.readtext(img, paragraph=True, x_ths=8.0, y_ths=0.09)
         self.read_config_file(pytesseract.image_to_data(img, output_type='dict', lang='rus+eng'))
-        self.process_image_and_lines(img)
-        return img, alL_contours
+        self.bit_not = cv2.bitwise_not(img)
+        return img, contours
 
-    def get_all_contours(self, img: ndarray, contours: Tuple[ndarray]) -> Tuple[ndarray, list]:
+    def get_all_contours_good(self, img: ndarray, contours: Tuple[ndarray]) -> Tuple[ndarray, list]:
         """
 
         :param img:
@@ -580,6 +571,26 @@ class RecognizeTable:
             if (w != img.shape[1] and h != img.shape[0]) and h > self.min_height_of_cell and w > self.min_width_of_cell:
                 all_contours.append([x, y, w, h])
                 image = cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        return image, all_contours
+
+    @staticmethod
+    def get_all_contours_bad(img: ndarray, contours: Tuple[ndarray]) -> Tuple[ndarray, list]:
+        """
+
+        :param img:
+        :param contours:
+        :return:
+        """
+        all_contours: list = []
+        image: ndarray = img
+        for data in contours:
+            box, text = data
+            top_left, top_right, bottom_right, bottom_left = box
+            list_top_left: list = [int(x) - 8 if i == 0 else int(x) for i, x in enumerate(top_left)]
+            list_bottom_right: list = [int(x) + 8 if i == 0 else int(x) for i, x in enumerate(bottom_right)]
+            list_width_height: list = [w - h for w, h in zip(bottom_right, top_left)]
+            all_contours.append(list_top_left + list_width_height)
+            image = cv2.rectangle(img, list_top_left, list_bottom_right, (0, 0, 0), 2)
         return image, all_contours
 
     def add_in_box_all_contours(self, image: ndarray, all_contours: Tuple[ndarray]) -> Tuple[list, list]:
@@ -626,17 +637,36 @@ class RecognizeTable:
             elem_of_box.recognize_and_get_structure_of_table()
         return box
 
-    def write_to_csv(self, box: list) -> None:
+    def write_to_csv(self, box: list, contours, is_good_structure: bool) -> None:
         """
         Сохраняем данные в csv.
         :param box: Ячейка.
+        :param contours:
+        :param is_good_structure:
         :return:
         """
-        for elem_of_box in box:
-            df: Optional[pd.DataFrame] = elem_of_box.to_dataframe()
-            if df is not None:
-                file: str = f"{self.file}_{elem_of_box.x1}_{elem_of_box.y1}.csv"
-                df.to_csv(f'{self.output_directory_csv}/{os.path.basename(file)}', encoding="utf-8", index=False)
+        if is_good_structure:
+            for elem_of_box in box:
+                df: Optional[pd.DataFrame] = elem_of_box.to_dataframe()
+                if df is not None:
+                    file: str = f"{self.file}_{elem_of_box.x1}_{elem_of_box.y1}.csv"
+                    df.to_csv(f'{self.output_directory_csv}/{os.path.basename(file)}', encoding="utf-8", index=False)
+        else:
+            with open(f'{self.output_directory_csv}/{os.path.basename(self.file)}.csv', 'w', newline='', encoding='utf-8') \
+                    as csvfile:
+                csv_writer = csv.writer(csvfile)
+                csv_writer.writerow(['Box_Top_Left', 'Box_Top_Right', 'Box_Bottom_Right', 'Box_Bottom_Left', 'Text'])
+                for data in contours:
+                    # box, text
+                    box, text = data
+                    top_left, top_right, bottom_right, bottom_left = box
+
+                    tl = [int(x) for x in top_left]
+                    tr = [int(x) for x in top_right]
+                    br = [int(x) for x in bottom_right]
+                    bl = [int(x) for x in bottom_left]
+
+                    csv_writer.writerow([tl, tr, br, bl, text])
 
     def write_to_json(self, box: list) -> list:
         """
@@ -664,16 +694,17 @@ class RecognizeTable:
                 return self.extracted_text()
             elif is_good_structure:
                 img, contours = self.pre_process_image_good_structure()
-                image, all_contours = self.get_all_contours(img, contours)
+                image, all_contours = self.get_all_contours_good(img, contours)
             else:
-                image, all_contours = self.pre_process_image_bad_structure()
+                img, contours = self.pre_process_image_bad_structure()
+                image, all_contours = self.get_all_contours_bad(img, contours)
         except Exception as ex:
             logger.error(f"Exception is {ex}")
             return
         box, list_combinations = self.add_in_box_all_contours(image, all_contours)
         self.find_parent_and_child_in_table(list_combinations)
         self.recognize_all_cells(box)
-        self.write_to_csv(box)
+        self.write_to_csv(box, contours, is_good_structure=is_good_structure)
         list_all_table: list = self.write_to_json(box)
         DataExtractor().parse_json(
             os.path.basename(self.file),
@@ -713,9 +744,6 @@ class Cell:
 
     def __str__(self):
         return str(self.x1, self.y1, self.x2, self.y2)
-
-    def __repr__(self):
-        return self.__str__()
 
     def recognize(self, lang: str) -> str:
         """
